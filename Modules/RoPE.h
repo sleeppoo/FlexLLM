@@ -21,8 +21,6 @@ void pref_RoPE_layer(
 ){
     // static T PE_sin[max_seq_Len][io_hidden_dim/2];
     // static T PE_cos[max_seq_Len][io_hidden_dim/2];
-    // #pragma HLS bind_storage variable=PE_sin type=ram_2p impl=uram
-    // #pragma HLS bind_storage variable=PE_cos type=ram_2p impl=uram
 
 
     // const int high_wave_length = original_max_pe / high_freq_factor;
@@ -75,6 +73,73 @@ void pref_RoPE_layer(
                     int s = M * io_parallel + m;
                     T sin_val = PE_sin[s][k];
                     T cos_val = PE_cos[s][k];
+                    T out_0 = temp_0 * cos_val - temp_1 * sin_val;
+                    T out_1 = temp_0 * sin_val + temp_1 * cos_val;
+                    out_pack_0[m] = out_0;
+                    out_pack_1[m] = out_1;
+                }
+                output_stream.write(out_pack_0);
+                reg_1[k] = out_pack_1;
+            }
+
+            output_second_half_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+            #pragma HLS PIPELINE II=1
+                output_stream.write(reg_1[k]);
+            }
+        }
+    }
+}
+
+template <typename T, int io_parallel, int io_hidden_dim = HEAD_DIM, int max_head_num = Q_HEAD_NUM, int max_seq_Len = MAX_PRE_SEQ_LEN>
+void pref_RoPE_layer_memory(
+    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+    // const T PE_sin[max_seq_Len][io_hidden_dim/2],
+    // const T PE_cos[max_seq_Len][io_hidden_dim/2],
+    tapa::mmap<hls::vector<T, io_parallel>> PE_sin_cos_mmap,
+    int head_num = max_head_num,
+    int seq_len = max_seq_Len
+    // const T rope_theta = 500000,
+    // const int factor = 32,
+    // const int low_freq_factor = 1,
+    // const int high_freq_factor = 4,
+    // const int original_max_pe = 8192
+){
+    hls::vector<T, io_parallel> PE_sin[io_hidden_dim/2];
+    hls::vector<T, io_parallel> PE_cos[io_hidden_dim/2];
+
+    hls::vector<T, io_parallel> reg_0[io_hidden_dim/2];
+    hls::vector<T, io_parallel> reg_1[io_hidden_dim/2];
+    io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+    #pragma HLS loop_tripcount min=1 max=max_seq_Len/io_parallel
+        load_PE_sin_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+        #pragma HLS PIPELINE II=1
+            PE_sin[k] = PE_sin_cos_mmap[M * io_hidden_dim + k];
+        }
+        load_PE_cos_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+        #pragma HLS PIPELINE II=1
+            PE_cos[k] = PE_sin_cos_mmap[M * io_hidden_dim + k + io_hidden_dim/2];
+        }       
+
+        attn_head_loop: for (int H = 0; H < head_num; H++){
+        #pragma HLS loop_tripcount min=1 max=max_head_num
+
+            load_first_half_input_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+            #pragma HLS PIPELINE II=1
+                reg_0[k] = input_stream.read();
+            }
+
+            load_second_half_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+            #pragma HLS PIPELINE II=1
+                hls::vector<T, io_parallel> temp_pack_0 = reg_0[k];
+                hls::vector<T, io_parallel> temp_pack_1 = input_stream.read();
+                hls::vector<T, io_parallel> out_pack_0;
+                hls::vector<T, io_parallel> out_pack_1;
+                for(int m = 0; m < io_parallel; m++){
+                    T temp_0 = temp_pack_0[m];
+                    T temp_1 = temp_pack_1[m];
+                    T sin_val = PE_sin[k][m];
+                    T cos_val = PE_cos[k][m];
                     T out_0 = temp_0 * cos_val - temp_1 * sin_val;
                     T out_1 = temp_0 * sin_val + temp_1 * cos_val;
                     out_pack_0[m] = out_0;
@@ -149,6 +214,67 @@ void dec_RoPE_layer(
         #pragma HLS PIPELINE II=1
             T sin_val = PE_sin[seq_id][k];
             T cos_val = PE_cos[seq_id][k];
+            hls::vector<T, head_parallel> temp_pack_0 = reg_0[k];
+            hls::vector<T, head_parallel> temp_pack_1 = input_stream.read();
+            hls::vector<T, head_parallel> out_pack_0;
+            hls::vector<T, head_parallel> out_pack_1;
+            for(int m = 0; m < head_parallel; m++){
+                T temp_0 = temp_pack_0[m];
+                T temp_1 = temp_pack_1[m];
+                T out_0 = temp_0 * cos_val - temp_1 * sin_val;
+                T out_1 = temp_0 * sin_val + temp_1 * cos_val;
+                out_pack_0[m] = out_0;
+                out_pack_1[m] = out_1;
+            }
+            output_stream.write(out_pack_0);
+            reg_1[k] = out_pack_1;
+        }
+
+        output_second_half_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+        #pragma HLS PIPELINE II=1
+            output_stream.write(reg_1[k]);
+        }
+    }    
+}
+
+
+template <typename T, int head_parallel, int io_hidden_dim = HEAD_DIM, int max_head_num = Q_HEAD_NUM, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
+void dec_RoPE_layer_memory(
+    tapa::istream<hls::vector<T, head_parallel>>& input_stream,
+    tapa::ostream<hls::vector<T, head_parallel>>& output_stream,
+    tapa::mmap<hls::vector<T, 2>> PE_sin_cos_mmap,
+    int head_num = max_head_num,
+    int seq_id = 0
+    // const T rope_theta = 500000,
+    // const int factor = 32,
+    // const int low_freq_factor = 1,
+    // const int high_freq_factor = 4,
+    // const int original_max_pe = 8192
+){
+    T PE_sin[io_hidden_dim/2];
+    T PE_cos[io_hidden_dim/2];
+
+    hls::vector<T, head_parallel> reg_0[io_hidden_dim/2];
+    hls::vector<T, head_parallel> reg_1[io_hidden_dim/2];
+
+    load_PE_sin_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+    #pragma HLS PIPELINE II=1
+        hls::vector<T, 2> PE_pack = PE_sin_cos_mmap[seq_id * io_hidden_dim/2 + k];
+        PE_sin[k] = PE_pack[0];
+        PE_cos[k] = PE_pack[1];
+    }
+
+    attn_head_loop: for (int H = 0; H < head_num/head_parallel; H++){
+    #pragma HLS loop_tripcount min=1 max=max_head_num/head_parallel
+        load_first_half_input_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+        #pragma HLS PIPELINE II=1
+            reg_0[k] = input_stream.read();
+        }
+
+        load_second_half_loop: for(int k = 0; k < io_hidden_dim/2; k++){
+        #pragma HLS PIPELINE II=1
+            T sin_val = PE_sin[k];
+            T cos_val = PE_cos[k];
             hls::vector<T, head_parallel> temp_pack_0 = reg_0[k];
             hls::vector<T, head_parallel> temp_pack_1 = input_stream.read();
             hls::vector<T, head_parallel> out_pack_0;

@@ -451,9 +451,9 @@ void dec_K_cache_buffer_template(
     int block_id,
     int seq_id
 ){
-    static T k_reg[decoder_layer_num][head_parallel][K_hidden_dim/head_parallel][K_parallel];
-    #pragma HLS ARRAY_PARTITION variable=k_reg type=complete dim=2
-    #pragma HLS ARRAY_PARTITION variable=k_reg type=cyclic factor=K_parallel/2 dim=4
+    static T k_reg[head_parallel][K_hidden_dim/head_parallel][K_parallel];
+    #pragma HLS ARRAY_PARTITION variable=k_reg type=complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=k_reg type=cyclic factor=K_parallel/2 dim=3
 
     reg_k_loop: for (int k = 0; k < K_hidden_dim/head_parallel; k++) {
     #pragma HLS pipeline II=1
@@ -461,10 +461,10 @@ void dec_K_cache_buffer_template(
         for (int i = 0; i < head_parallel; i++) {
             if(seq_id % K_parallel == 0) {
                 for(int j = 0; j < K_parallel; j++){
-                    k_reg[block_id][i][k][j] = 0;
+                    k_reg[i][k][j] = 0;
                 }
             }
-            k_reg[block_id][i][k][seq_id % K_parallel] = data_pack[i];
+            k_reg[i][k][seq_id % K_parallel] = data_pack[i];
         }
     }
 
@@ -473,7 +473,7 @@ void dec_K_cache_buffer_template(
         for (int i = 0; i < head_parallel; i++) {
             hls::vector<T, K_parallel> K_cache_pack;
             for(int j = 0; j < K_parallel; j++){
-                K_cache_pack[j] = k_reg[block_id][i][k][j] ;
+                K_cache_pack[j] = k_reg[i][k][j] ;
             }
             output_k_streams[i].write(K_cache_pack);
         }
@@ -744,16 +744,16 @@ void dec_V_cache_buffer_template(
     tapa::ostreams<hls::vector<T, V_parallel>, head_parallel>& output_v_streams,
     int block_id
 ){
-    T v_reg[decoder_layer_num][head_parallel][V_hidden_dim/(head_parallel*V_parallel)][V_parallel];
-    #pragma HLS ARRAY_PARTITION variable=v_reg type=complete dim=2
-    #pragma HLS ARRAY_PARTITION variable=v_reg type=cyclic factor=V_parallel/2 dim=4
+    T v_reg[head_parallel][V_hidden_dim/(head_parallel*V_parallel)][V_parallel];
+    #pragma HLS ARRAY_PARTITION variable=v_reg type=complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=v_reg type=cyclic factor=V_parallel/2 dim=3
 
     reg_v_loop: for (int K = 0; K < V_hidden_dim/(head_parallel*V_parallel); K++) {
         for(int k = 0; k < V_parallel; k++){
         #pragma HLS pipeline II=1
             hls::vector<T, head_parallel> data_pack = input_v_stream.read();
             for (int i = 0; i < head_parallel; i++) {
-                v_reg[block_id][i][K][k] = data_pack[i];
+                v_reg[i][K][k] = data_pack[i];
             }
         }
     }
@@ -763,7 +763,7 @@ void dec_V_cache_buffer_template(
         for (int i = 0; i < head_parallel; i++) {
             hls::vector<T, V_parallel> V_cache_pack;
             for(int k = 0; k < V_parallel; k++){
-                V_cache_pack[k] = v_reg[block_id][i][K][k] ;
+                V_cache_pack[k] = v_reg[i][K][k] ;
             }
             output_v_streams[i].write(V_cache_pack);
         }

@@ -60,6 +60,29 @@ void pref_io_discard(
     }
 }
 
+
+template <typename T, int io_parallel, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+void pref_io_padding(
+    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+    int seq_len = max_seq_len,
+    int in_hidden_dim = max_in_hidden_dim,
+    int out_hidden_dim = max_out_hidden_dim
+){
+    io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+    #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+        pass_loop: for (int k = 0; k < in_hidden_dim; k++) {
+        #pragma HLS pipeline II=1
+            output_stream.write(input_stream.read());
+        }
+        pad_loop: for (int k = 0; k < out_hidden_dim-in_hidden_dim; k++) {
+        #pragma HLS pipeline II=1
+            output_stream.write(hls::vector<T, io_parallel>(0));
+        }
+    }
+}
+
+
 template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
 void pref_io_register(
     tapa::istream<hls::vector<T, io_parallel>>& input_stream,
@@ -493,6 +516,23 @@ void dec_io_discard(
     discard_loop: for (int k = 0; k < in_hidden_dim - out_hidden_dim; k++) {
     #pragma HLS pipeline II=1
         input_stream.read();
+    }
+}
+
+template <typename T, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM>
+void dec_io_padding(
+    tapa::istream<T>& input_stream,
+    tapa::ostream<T>& output_stream,
+    int in_hidden_dim = max_in_hidden_dim,
+    int out_hidden_dim = max_out_hidden_dim
+){
+    pass_loop: for (int k = 0; k < in_hidden_dim; k++) {
+    #pragma HLS pipeline II=1
+        output_stream.write(input_stream.read());
+    }
+    pad_loop: for (int k = 0; k < out_hidden_dim-in_hidden_dim; k++) {
+    #pragma HLS pipeline II=1
+        output_stream.write(T(0));
     }
 }
 
