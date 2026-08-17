@@ -431,17 +431,17 @@ void SpinQuant_Decoding_test(int argc, char* argv[]) {
         //     io_mmap[idx] = vocab_lib[first_token_idx * io_init_vecs + idx];
         // }
 
-        std::vector<int> token_idx;
-        std::ifstream fin("my_prompt_token_idx.txt");
-        if (!fin) {
-            std::cerr << "Failed to open token_idx.txt\n";
-            return;
-        }
-        int id;
-        while (fin >> id && token_idx.size() < MAX_PRE_SEQ_LEN)  {
-            token_idx.push_back(id);
-        }
-        std::cout << "Loaded " << token_idx.size() << " tokens:\n";
+        // std::vector<int> token_idx;
+        // std::ifstream fin("my_prompt_token_idx.txt");
+        // if (!fin) {
+        //     std::cerr << "Failed to open token_idx.txt\n";
+        //     return;
+        // }
+        // int id;
+        // while (fin >> id && token_idx.size() < MAX_PRE_SEQ_LEN)  {
+        //     token_idx.push_back(id);
+        // }
+        // std::cout << "Loaded " << token_idx.size() << " tokens:\n";
 
         // for (size_t idx = 0; idx < io_init_vecs; ++idx) {
         //     io_mmap[idx] = vocab_lib[token_idx[token_idx.size() - 1] * io_init_vecs + idx];
@@ -531,9 +531,6 @@ void SpinQuant_Decoding_test(int argc, char* argv[]) {
             fout << "\n";
         }
     }
-
-    
-    
 
     double avg_s = (total_time_ns / double(num_runs)) * 1e-9;
     std::cout << "Average kernel time over " << num_runs << " runs: " << avg_s << " s\n";

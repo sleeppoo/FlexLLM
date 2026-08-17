@@ -1014,7 +1014,7 @@ void SpinQuant_Prefilling(
     .invoke(pref_Gate_distributor, ln_res0_stream, ln_res0_stream_ffn_gate, ln_res0_stream_ffn_up, seq_len)
 
     .invoke(pref_quant_layer_ffn_gate_fp32_int4, ln_res0_stream_ffn_gate, ln_res0_s_b_stream_ffn_gate, quant_ln_res0_stream_ffn_gate, seq_len)
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_gate, w_ffn_gate_mmaps, w_ffn_gate_streams, seq_len)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_gate, w_ffn_gate_mmaps, w_ffn_gate_streams, seq_len)
     .invoke(pref_weight_s_loader_w_ffn_gate, w_ffn_gate_s_sum_mmap, w_ffn_gate_s_sum_stream, seq_len)
     // .invoke(Linear_Layer_i4xi4_ffn_gate, quant_ln_res0_stream_ffn_gate, w_ffn_gate_streams, quant_ffn_gate_stream, seq_len)
     .invoke(pref_Linear_Layer_i4xi4_ffn_gate, quant_ln_res0_stream_ffn_gate, w_ffn_gate_streams, quant_ffn_gate_stream_redundant, seq_len)
@@ -1023,7 +1023,7 @@ void SpinQuant_Prefilling(
     .invoke(pref_Swish_Layer_ffn, ffn_gate_stream, sw_ffn_gate_stream, seq_len)
 
     .invoke(pref_quant_layer_ffn_up_fp32_int4, ln_res0_stream_ffn_up, ln_res0_s_b_stream_ffn_up, quant_ln_res0_stream_ffn_up, seq_len)
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_up, w_ffn_up_mmaps, w_ffn_up_streams, seq_len)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_up, w_ffn_up_mmaps, w_ffn_up_streams, seq_len)
     .invoke(pref_weight_s_loader_w_ffn_up, w_ffn_up_s_sum_mmap, w_ffn_up_s_sum_stream, seq_len)
     // .invoke(Linear_Layer_i4xi4_ffn_up, quant_ln_res0_stream_ffn_up, w_ffn_up_streams, quant_ffn_up_stream, seq_len)
     .invoke(pref_Linear_Layer_i4xi4_ffn_up, quant_ln_res0_stream_ffn_up, w_ffn_up_streams, quant_ffn_up_stream_redundant, seq_len)
@@ -1039,7 +1039,7 @@ void SpinQuant_Prefilling(
 
     // FFN Down Layer
     .invoke(pref_quant_layer_ffn_down_fp32_int4, r4_gated_sw_ffn_up_stream, r4_gated_sw_ffn_up_s_b_stream, quant_r4_gated_sw_ffn_up_stream, seq_len)
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_down, w_ffn_down_mmaps, w_ffn_down_streams, seq_len)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(pref_weight_loader_w_ffn_down, w_ffn_down_mmaps, w_ffn_down_streams, seq_len)
     .invoke(pref_weight_s_loader_w_ffn_down, w_ffn_down_s_sum_mmap, w_ffn_down_s_sum_stream, seq_len)
     // .invoke(pref_Linear_Layer_i4xi4_ffn_down, quant_r4_gated_sw_ffn_up_stream, w_ffn_down_streams, quant_ffn_down_stream, seq_len)
     .invoke(pref_Linear_Layer_i4xi4_ffn_down, quant_r4_gated_sw_ffn_up_stream, w_ffn_down_streams, quant_ffn_down_stream_redundant, seq_len)

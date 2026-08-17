@@ -13,10 +13,34 @@
 DEFINE_string(bitstream_pref, "", ""/*path to bitstream file, run csim if empty*/);
 DEFINE_string(bitstream_dec, "", ""/*path to bitstream file, run csim if empty*/);
 DEFINE_string(model_gguf_path, "llama-3.2-1b-f16.gguf", ""/*path to bitstream file, run csim if empty*/);
+DEFINE_bool(chat, false, "Read prompt from stdin; terminate input with a line containing only ##.");
 
 #include "SpinQuant_Prefilling_mem_opt.h"
-#include "SpinQuant_Decoding_mem_opt.h"
+#include "SpinQuant_Decoding_mem_opt_logits.h"
 #include "llama_tokenizer.h"
+
+bool read_chat_prompt(std::string &out_prompt) {
+    std::vector<std::string> lines;
+    std::string line;
+    while (true) {
+        if (!std::getline(std::cin, line)) {
+            return false;
+        }
+        if (line == "##") {
+            break;
+        }
+        lines.push_back(line);
+    }
+
+    out_prompt.clear();
+    for (size_t i = 0; i < lines.size(); ++i) {
+        if (i) {
+            out_prompt.push_back('\n');
+        }
+        out_prompt += lines[i];
+    }
+    return true;
+}
 
 template <int read_parallel, int weight_parallel, int input_dim, int output_dim>
 void prefilling_read_int4_bin_as_int8_weight_mmap(
@@ -53,7 +77,7 @@ void prefilling_read_int4_bin_as_int8_weight_mmap(
         fin.read(reinterpret_cast<char*>(data_1.data()), data_1.size() * sizeof(int8_t));
         if (!fin) { std::cerr << "Read error @ row " << (2*n+1) << " in " << name << "\n"; return; }
 
-        
+
         // Pack and write to mmap
         // Tile index = n / (weight_parallel/2), lane = n % (weight_parallel/2)
         const int tile  = n / (weight_parallel / 2);
@@ -108,7 +132,7 @@ void prefilling_read_int4_bin_as_blocked_int8_weight_mmaps(
         fin.seekg(off1, std::ios::beg);
         fin.read(reinterpret_cast<char*>(data_1.data()), data_1.size() * sizeof(int8_t));
         if (!fin) { std::cerr << "Read error @ row " << (2*n+1) << " in " << name << "\n"; return; }
-        
+
         // Pack and write to mmap
         const int block_id = n % block_num;
         const int tile  = (n/block_num) / (weight_parallel/block_num / 2);
@@ -218,7 +242,7 @@ void decoding_read_int4_bin_as_int8_weight_mmap(
             fin.read(reinterpret_cast<char*>(data_1.data()), data_1.size() * sizeof(int8_t));
             if (!fin) { std::cerr << "Read error @ row " << actual_block_id * (output_dim/block_parallel) + (2*n+1) << " in " << name << "\n"; return; }
 
-            
+
             // Pack and write to mmap
             const int tile  = (n + out_dim_offset/2)  / (weight_parallel / 2);
             const int lane  = (n + out_dim_offset/2)  % (weight_parallel / 2);
@@ -297,7 +321,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
                 vec[i] = ap_int<8>(dist8(rng));
     };
 
-    // 1) prefilling 
+    // 1) prefilling
     cout << "Prefilling parameters:\n";
     cout << "Token Parallel: " << TOKEN_PARALLEL << endl;
     cout << "Pre QKVO Weight Parallel: " << PRE_QKVO_W_PARALLEL << endl;
@@ -327,7 +351,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     cout << "wv_wo_mmap size: " << wv_wo_mmap.size() << endl;
     vector<hls::vector<float, 2>, tapa::aligned_allocator<hls::vector<float, 2>>> wv_wo_s_sum_mmap(DECODER_LAYER_NUM * (KV_HIDDEN_DIM + HIDDEN_DIM));
     cout << "wv_wo_s_sum_mmap size: " << wv_wo_s_sum_mmap.size() << endl;
-    
+
     // MHA
     vector<hls::vector<ap_int<8>, PRE_K_PARALLEL>, tapa::aligned_allocator<hls::vector<ap_int<8>, PRE_K_PARALLEL>>> pref_k_cache(
         DECODER_LAYER_NUM * KV_HEAD_NUM * MAX_PRE_SEQ_LEN/PRE_K_PARALLEL * HEAD_DIM
@@ -381,7 +405,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     // cout << "res0_cache_mmap size: " << res0_cache_mmap.size() << endl;
     // vector<hls::vector<float, TOKEN_PARALLEL>, tapa::aligned_allocator<hls::vector<float, TOKEN_PARALLEL>>> res1_cache_mmap(MAX_PRE_SEQ_LEN/TOKEN_PARALLEL * HIDDEN_DIM);
     // cout << "res1_cache_mmap size: " << res1_cache_mmap.size() << endl;
-    
+
     // Initialize buffers
     for(int i = 0; i < DECODER_LAYER_NUM; i++) {
         prefilling_read_int4_bin_as_int8_weight_mmap<PRE_QKVO_W_PARALLEL_READ, PRE_QKVO_W_PARALLEL, HIDDEN_DIM, KV_HIDDEN_DIM>(
@@ -443,7 +467,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     #include "parameters/w_down_proj_s_sum.h"
     #include "parameters/w_lm_head_lm_head.h"
     #include "parameters/w_rmsnorm.h"
-    
+
     for(int i = 0; i < DECODER_LAYER_NUM; i++) {
         int bias = i * KV_HIDDEN_DIM;
         for(int j = 0; j < KV_HIDDEN_DIM; j++){
@@ -489,8 +513,8 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
         }
     }
     cout << "Prefilling: Finished reading layer norm weights." << endl;
-       
-    
+
+
     // 2) decoding
     cout << "Decoding parameters:\n";
     cout << "Token Block Parallel: " << T_BLOCK_PARALLEL << endl;
@@ -499,12 +523,12 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     cout << "Dec MHA Head Parallel: " << DEC_HEAD_PARALLEL << endl;
     cout << "Dec MHA K Weight Parallel: " << DEC_K_PARALLEL << endl;
     cout << "Dec MHA V Weight Parallel: " << DEC_V_PARALLEL << endl;
-    
+
     // random seeds
     vector<float, tapa::aligned_allocator<float>> rand_seeds_mmap(MAX_DEC_SEQ_LEN);
 
     // decoder token idx
-    vector<int, tapa::aligned_allocator<int>> sampled_token_idx_mmap(MAX_DEC_SEQ_LEN);
+    vector<sampling_idx_logits_pair, tapa::aligned_allocator<sampling_idx_logits_pair>> sampled_token_idx_mmap(MAX_DEC_SEQ_LEN * (LOGITS_MAX_K + 1));
 
     // vocab library
     vector<hls::vector<float, T_BLOCK_PARALLEL>, tapa::aligned_allocator<hls::vector<float, T_BLOCK_PARALLEL>>> vocab_lib(
@@ -742,7 +766,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     // 3) set the model tokenizer
     // install logger before loading model
     llama_log_set(llama_silent_log, nullptr);
-    
+
     // defaults
     static const char *MODEL_PATH = "llama-3.2-1b-f16.gguf";
     std::string in_path = "my_prompt.txt";
@@ -771,20 +795,24 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
     }
 
     // 3) Run the prefilling and decoding kernels
-    
+
     const int num_runs = 100;
     int64_t pref_total_time_ns = 0;
     int64_t dec_total_time_ns = 0;
     std::cout << "kernel begins running " << num_runs << " times …\n";
-    
+
     for (int run = 0; run < num_runs; ++run) {
     // Call Linear_Layer_tb
     // Apply initialization
-        cout << "\n --- Ready for next request (q to quit) ---\n";
-        char run_char;
-        cin >> run_char;
-        if (run_char == 'q') {
-            break;
+        if (!FLAGS_chat) {
+            cout << "\n --- Ready for next request (q to quit) ---\n";
+            char run_char;
+            cin >> run_char;
+            if (run_char == 'q') {
+                break;
+            }
+        } else {
+            cout << "\n[Info] Enter prompt (finish with a line containing only ##):\n";
         }
 
         // Zero out the io vectors
@@ -793,10 +821,23 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
         }
 
         // // encode tokens to ids
-        std::string raw_prompt = read_file(in_path);
-        if (raw_prompt.empty()) {
-            std::cerr << "Failed to read prompt file: " << in_path << "\n";
-            return 1;
+        std::string raw_prompt;
+        if (FLAGS_chat) {
+            if (!read_chat_prompt(raw_prompt)) {
+                std::cout << "[Info] No more prompt input. Quit.\n";
+                break;
+            }
+            if (raw_prompt.empty()) {
+                std::cerr << "[Error] Prompt is empty.\n";
+                --run;
+                continue;
+            }
+        } else {
+            raw_prompt = read_file(in_path);
+            if (raw_prompt.empty()) {
+                std::cerr << "Failed to read prompt file: " << in_path << "\n";
+                return 1;
+            }
         }
 
         // std::cout << "Prompt string (" << in_path << "):\n";
@@ -834,10 +875,12 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
         // 4) apply chat template
         std::string chat_text = apply_chat_template(messages, /*add_generation_prompt=*/true);
 
-        std::cout << "Chat text (templated):\n";
-        std::cout << "----------------------------------------\n";
-        std::cout << chat_text << "\n";
-        std::cout << "----------------------------------------\n\n";
+        if (!FLAGS_chat) {
+            std::cout << "Chat text (templated):\n";
+            std::cout << "----------------------------------------\n";
+            std::cout << chat_text << "\n";
+            std::cout << "----------------------------------------\n\n";
+        }
 
         auto token_idx = encode_text(vocab, chat_text,
                            /*add_special=*/false,   // we already added <|begin_of_text|>
@@ -868,7 +911,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
 
         cout << "Prefill kernel begins running!\n";
         int64_t pref_kernel_time_ns = tapa::invoke(
-            SpinQuant_Prefilling, 
+            SpinQuant_Prefilling,
             FLAGS_bitstream_pref,
             tapa::read_write_mmap<hls::vector<float, TOKEN_PARALLEL>>(pref_io_mmap),
             tapa::read_only_mmap<hls::vector<ap_int<8>, PRE_QKVO_W_PARALLEL_READ/2>>(wk_wq_mmap),
@@ -890,7 +933,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
             // MAX_PRE_SEQ_LEN
             test_pre_seq_len_pad
         );
-        
+
         // double pref_t_s = pref_kernel_time_ns * 1e-9;
         // std::cout << "  Run " << run << " — kernel time: " << pref_t_s << " s\n";
         // pref_total_time_ns += pref_kernel_time_ns;
@@ -915,7 +958,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
             if (x > 1.0f) x = 0.0f;
             rand_seeds_mmap[i] = x;
         }
-        
+
         // Zero out the io vectors
         for (int idx = 0; idx < dec_io_mmap.size(); idx++) {
             dec_io_mmap[idx] = 0.0f;
@@ -956,7 +999,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
                         int read_sub_idx = i % PRE_K_PARALLEL;
 
                         w_qkvo_FFN_mmaps_half_0_k_caches[h/(KV_HEAD_NUM/DEC_HEAD_PARALLEL)][w_qkvo_FFN_size + write_idx][write_sub_idx] = pref_k_cache[read_idx][read_sub_idx];
-                    
+
                         write_idx = ((layer * (KV_HEAD_NUM/DEC_HEAD_PARALLEL) + h % (KV_HEAD_NUM/DEC_HEAD_PARALLEL)) * HEAD_DIM + j)/DEC_V_PARALLEL * MAX_SUM_SEQ_LEN + i;
                         write_sub_idx = j % DEC_V_PARALLEL;
 
@@ -973,9 +1016,9 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
         // run the kernel
         cout << "Decode kernel begins running!\n";
 
-        
+
         int64_t dec_kernel_time_ns = tapa::invoke(
-            SpinQuant_Decoding, 
+            SpinQuant_Decoding,
             FLAGS_bitstream_dec,
             tapa::read_only_mmap<hls::vector<float, T_BLOCK_PARALLEL>>(vocab_lib),
             tapa::read_write_mmap<hls::vector<float, T_BLOCK_PARALLEL>>(dec_io_mmap),
@@ -989,14 +1032,14 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
             // tapa::read_write_mmaps<hls::vector<ap_int<8>, DEC_V_PARALLEL>, DEC_HEAD_PARALLEL>(v_caches),
             tapa::read_only_mmap<hls::vector<float, T_BLOCK_PARALLEL>>(gamma_beta_mmap),
             tapa::read_only_mmap<float>(rand_seeds_mmap),
-            tapa::write_only_mmap<int>(sampled_token_idx_mmap),
+            tapa::write_only_mmap<sampling_idx_logits_pair>(sampled_token_idx_mmap),
             // MAX_PRE_SEQ_LEN,
             test_pre_seq_len,
             MAX_DEC_SEQ_LEN
             // 256
         );
-        
-        
+
+
         // double dec_t_s = dec_kernel_time_ns * 1e-9;
         // std::cout << "  Run " << run << " — kernel time: " << dec_t_s << " s\n";
         // dec_total_time_ns += dec_kernel_time_ns;
@@ -1022,7 +1065,7 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
 
         std::vector<llama_token> ids_for_decode;
         for(int i = 0; i < MAX_DEC_SEQ_LEN - 1; i++) {
-            int token_id = sampled_token_idx_mmap[i];
+            int token_id = sampled_token_idx_mmap[i * (LOGITS_MAX_K + 1) + LOGITS_MAX_K].idx;
             ids_for_decode.push_back(static_cast<llama_token>(token_id));
             if (token_id == 128009) break;
         }
@@ -1039,11 +1082,10 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
             /*parse_special=*/true
         );
 
-        std::cout << "Decoded string:\n";
-        std::cout << "----------------------------------------\n";
+        std::cout << "\n=== Response ===\n";
         std::cout << decoded << "\n";
         std::cout << "(generate 1024 tokens in total and truncate by <|eot_id|>)\n";
-        std::cout << "----------------------------------------\n";
+        std::cout << "Decoded string written to: " << out_path << "\n\n";
 
         // 6. write to file
         if (!write_file(out_path, decoded)) {
@@ -1052,8 +1094,9 @@ int SpinQuant_Prefilling_Decoding_test(int argc, char* argv[]) {
             return 1;
         }
 
-        std::cout << "Decoded string written to: " << out_path << "\n";
 
+
+        std::cout << "\n=== FPGA Stats ===\n";
         double pref_t_s = pref_kernel_time_ns * 1e-9;
         std::cout << "U280 FPGA Run " << run << " — prefill kernel time: " << pref_t_s << " s\n";
         std::cout << "U280 FPGA Run " << run << " — prefill sequence length: " << test_pre_seq_len << " \n";

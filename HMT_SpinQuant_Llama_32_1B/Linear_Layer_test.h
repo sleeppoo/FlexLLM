@@ -248,7 +248,7 @@ void Linear_Layer_q_Decoding_tb(
 
     tapa::task()
     .invoke(dec_input_loader_r1_ln_iembed_int4, input_mmap, input_stream, dec_seq_len)
-    .invoke<tapa::detach, T_BLOCK_PARALLEL>(dec_weight_loader_wq, weight_mmaps, weight_streams, dec_seq_len)
+    .invoke<tapa::join, T_BLOCK_PARALLEL>(dec_weight_loader_wq, weight_mmaps, weight_streams, dec_seq_len)
     .invoke(dec_Linear_Layer_i4xi4_q, input_stream, weight_streams, output_stream, dec_seq_len)
     .invoke(dec_output_drainer_q_int, output_stream, output_mmap, dec_seq_len);
 }
@@ -352,7 +352,7 @@ void QuantWrapper_Linear_Layer_q_Decoding_tb(
 
     .invoke(dec_quant_layer_r1_ln_iembed_fp32_int4, input_stream, input_s_b_stream, quant_input_stream, dec_seq_len)
 
-    .invoke<tapa::detach, T_BLOCK_PARALLEL>(dec_weight_loader_wq, quant_weight_mmaps, quant_weight_streams, dec_seq_len)
+    .invoke<tapa::join, T_BLOCK_PARALLEL>(dec_weight_loader_wq, quant_weight_mmaps, quant_weight_streams, dec_seq_len)
 
     .invoke(dec_weight_s_loader_wq, weight_s_sum_mmap, weight_s_sum_stream, dec_seq_len)
 

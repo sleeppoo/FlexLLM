@@ -935,7 +935,7 @@ void HMT_SpinQuant_Prefilling(
             hmt_stage_01_finish_stream, hmt_stage_01_ready_stream,
             hmt_Sn_stream, hmt_Pn_stream, hmt_Mn_stream, seg_len_stream, seq_len, seg_num
     )
-    .invoke<tapa::detach, HMT_T_BLOCK_PARALLEL>(hmt_weight_loader_qk_attn, hmt_wq_wk_mmaps, load_Kn_streams, load_Mn_streams, w_qk_attn_streams, seg_num)
+    .invoke<tapa::join, HMT_T_BLOCK_PARALLEL>(hmt_weight_loader_qk_attn, hmt_wq_wk_mmaps, load_Kn_streams, load_Mn_streams, w_qk_attn_streams, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn_input_merger, hmt_Sn_stream, hmt_Qn_stream, hmt_sft_An_stream, hmt_Mn_stream, hmt_Mn_cache_stream, hmt_ll_input_stream, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn, hmt_ll_input_stream, w_qk_attn_streams, hmt_ll_output_stream, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn_output_merger, hmt_ll_output_stream, hmt_Qn_stream, hmt_An_stream, hmt_Pn_stream, hmt_Kn_stream, seg_num)
@@ -1007,7 +1007,7 @@ void HMT_SpinQuant_Prefilling(
     .invoke(hmt_pref_Gate_distributor, ln_res0_stream, ln_res0_stream_ffn_gate, ln_res0_stream_ffn_up, seg_len_streams[39])
 
     .invoke(hmt_pref_quant_layer_ffn_gate_fp32_int4, ln_res0_stream_ffn_gate, ln_res0_s_b_stream_ffn_gate, quant_ln_res0_stream_ffn_gate, seg_len_streams[40])
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_gate, w_ffn_gate_mmaps, w_ffn_gate_streams, seg_len_stream_copies_0)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_gate, w_ffn_gate_mmaps, w_ffn_gate_streams, seg_len_stream_copies_0)
     .invoke(hmt_pref_weight_s_loader_w_ffn_gate, w_ffn_gate_s_sum_mmap, w_ffn_gate_s_sum_stream, seg_len_streams[41])
     .invoke(hmt_pref_Linear_Layer_i4xi4_ffn_gate, quant_ln_res0_stream_ffn_gate, w_ffn_gate_streams, quant_ffn_gate_stream_redundant, seg_len_streams[42])
     .invoke(hmt_pref_ffn_gate_discard, quant_ffn_gate_stream_redundant, quant_ffn_gate_stream, seg_len_streams[43])
@@ -1015,7 +1015,7 @@ void HMT_SpinQuant_Prefilling(
     .invoke(hmt_pref_Swish_Layer_ffn, ffn_gate_stream, sw_ffn_gate_stream, seg_len_streams[45])
 
     .invoke(hmt_pref_quant_layer_ffn_up_fp32_int4, ln_res0_stream_ffn_up, ln_res0_s_b_stream_ffn_up, quant_ln_res0_stream_ffn_up, seg_len_streams[46])
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_up, w_ffn_up_mmaps, w_ffn_up_streams, seg_len_stream_copies_1)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_up, w_ffn_up_mmaps, w_ffn_up_streams, seg_len_stream_copies_1)
     .invoke(hmt_pref_weight_s_loader_w_ffn_up, w_ffn_up_s_sum_mmap, w_ffn_up_s_sum_stream, seg_len_streams[47])
     .invoke(hmt_pref_Linear_Layer_i4xi4_ffn_up, quant_ln_res0_stream_ffn_up, w_ffn_up_streams, quant_ffn_up_stream_redundant, seg_len_streams[48])
     .invoke(hmt_pref_ffn_up_discard, quant_ffn_up_stream_redundant, quant_ffn_up_stream, seg_len_streams[49])
@@ -1030,7 +1030,7 @@ void HMT_SpinQuant_Prefilling(
 
     // FFN Down Layer
     .invoke(hmt_pref_quant_layer_ffn_down_fp32_int4, r4_gated_sw_ffn_up_stream, r4_gated_sw_ffn_up_s_b_stream, quant_r4_gated_sw_ffn_up_stream, seg_len_streams[53])
-    .invoke<tapa::detach, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_down, w_ffn_down_mmaps, w_ffn_down_streams, seg_len_stream_copies_2)
+    .invoke<tapa::join, PRE_FFN_W_BLOCK_NUM>(hmt_pref_weight_loader_w_ffn_down, w_ffn_down_mmaps, w_ffn_down_streams, seg_len_stream_copies_2)
     .invoke(hmt_pref_weight_s_loader_w_ffn_down, w_ffn_down_s_sum_mmap, w_ffn_down_s_sum_stream, seg_len_streams[54])
     .invoke(hmt_pref_Linear_Layer_i4xi4_ffn_down, quant_r4_gated_sw_ffn_up_stream, w_ffn_down_streams, quant_ffn_down_stream_redundant, seg_len_streams[55])
     .invoke(hmt_pref_ffn_down_discard, quant_ffn_down_stream_redundant, quant_ffn_down_stream, seg_len_streams[56])

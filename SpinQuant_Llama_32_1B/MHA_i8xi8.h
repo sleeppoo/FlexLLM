@@ -736,7 +736,7 @@ void MHA_i8xi8_qxk_decoding_tb(
     .invoke(dec_K_buffer, k_in_stream, k_stream, dec_seq_len)
     .invoke(dec_quant_layer_k_fp32_int8, k_stream, quant_k_stream, dec_seq_len)
     .invoke(dec_K_cache_buffer, quant_k_stream, cache_quant_k_streams, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
 
     .invoke(dec_input_loader_q_fp32, block_q_ready_stream, q_mmap, q_in_stream, dec_seq_len)
     .invoke(dec_Q_buffer, q_in_stream, q_stream, dec_seq_len)
@@ -744,7 +744,7 @@ void MHA_i8xi8_qxk_decoding_tb(
     .invoke(dec_MHA_i8xi8_qxk_input_broadcastor, quant_q_stream, quant_q_loaders, pre_seq_len, dec_seq_len)
     
     // .invoke(MHA_i8xi8_qxk, quant_q_stream, load_quant_k_streams, quant_a_stream_redundant, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(
         dec_MHA_i8xi8_qxk_flatten, quant_q_loaders, load_quant_k_streams, quant_a_drainers, pre_seq_len, dec_seq_len
     )
 
@@ -1074,7 +1074,7 @@ void MHA_i8xi8_decoding_tb(
     .invoke(dec_K_buffer, k_in_stream, k_stream, dec_seq_len)
     .invoke(dec_quant_layer_k_fp32_int8, k_stream, quant_k_stream, dec_seq_len)
     .invoke(dec_K_cache_buffer, quant_k_stream, cache_quant_k_streams, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
 
     .invoke(dec_input_loader_q_fp32, block_q_ready_stream, q_mmap, q_in_stream, dec_seq_len)
     .invoke(dec_Q_buffer, q_in_stream, q_stream, dec_seq_len)
@@ -1082,7 +1082,7 @@ void MHA_i8xi8_decoding_tb(
     .invoke(dec_MHA_i8xi8_qxk_input_broadcastor, quant_q_stream, quant_q_loaders, pre_seq_len, dec_seq_len)
     
     // .invoke(dec_MHA_i8xi8_qxk, quant_q_stream, load_quant_k_streams, quant_a_stream_redundant, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(
         dec_MHA_i8xi8_qxk_flatten, quant_q_loaders, load_quant_k_streams, quant_a_drainers, pre_seq_len, dec_seq_len
     )
 
@@ -1098,10 +1098,10 @@ void MHA_i8xi8_decoding_tb(
     .invoke(dec_V_buffer, v_in_stream, v_stream, dec_seq_len)
     .invoke(dec_quant_layer_v_fp32_int8, v_stream, quant_v_stream, dec_seq_len)
     .invoke(dec_V_cache_buffer, quant_v_stream, cache_quant_v_streams, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, 0)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, 0)
 
     // .invoke(MHA_i8xi8_axv, quant_sfm_a_stream, load_quant_v_streams, quant_o_stream, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(
         dec_MHA_i8xi8_axv_flatten, quant_sfm_a_loaders, load_quant_v_streams, quant_o_drainers, pre_seq_len, dec_seq_len
     )
 

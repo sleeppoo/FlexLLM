@@ -912,7 +912,7 @@ void HMT_SpinQuant_Prefilling(
             hmt_stage_01_finish_stream, hmt_stage_01_ready_stream,
             hmt_Sn_stream, hmt_Pn_stream, hmt_Mn_stream, seg_len_stream, seq_len, seg_num
     )
-    .invoke<tapa::detach, HMT_T_BLOCK_PARALLEL>(hmt_weight_loader_qk_attn, hmt_wq_wk_mmaps, load_Kn_streams, load_Mn_streams, w_qk_attn_streams, seg_num)
+    .invoke<tapa::join, HMT_T_BLOCK_PARALLEL>(hmt_weight_loader_qk_attn, hmt_wq_wk_mmaps, load_Kn_streams, load_Mn_streams, w_qk_attn_streams, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn_input_merger, hmt_Sn_stream, hmt_Qn_stream, hmt_sft_An_stream, hmt_Mn_stream, hmt_Mn_cache_stream, hmt_ll_input_stream, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn, hmt_ll_input_stream, w_qk_attn_streams, hmt_ll_output_stream, seg_num)
     .invoke(hmt_Linear_Layer_fp32xfp32_qk_attn_output_merger, hmt_ll_output_stream, hmt_Qn_stream, hmt_An_stream, hmt_Pn_stream, hmt_Kn_stream, seg_num)

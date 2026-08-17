@@ -15,7 +15,7 @@
 using namespace std;
 
 
-//llama3.2 1B
+// llama3.2 1B
 #define DECODER_LAYER_NUM 16
 #define MAX_PRE_SEQ_LEN 1024
 #define MAX_DEC_SEQ_LEN 1024
@@ -59,8 +59,6 @@ constexpr int  DEC_HEAD_PARALLEL = (T_QKVO_FFN_BLOCK_PARALLEL/2);
 constexpr int  DEC_QKVO_FFN_W_PARALLEL = 64;
 constexpr int  DEC_K_PARALLEL = (DEC_QKVO_FFN_W_PARALLEL/2);
 constexpr int  DEC_V_PARALLEL = (DEC_QKVO_FFN_W_PARALLEL/2);
-
-
 
 constexpr int  PRE_QKVO_W_PARALLEL_READ = (PRE_QKVO_W_PARALLEL <= 1 ? 1 : PRE_QKVO_W_PARALLEL <= 2 ? 2 :  PRE_QKVO_W_PARALLEL <= 4 ? 4 :
                                             PRE_QKVO_W_PARALLEL <= 8 ? 8 : PRE_QKVO_W_PARALLEL <= 16 ? 16 : PRE_QKVO_W_PARALLEL <= 32 ? 32 : 

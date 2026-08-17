@@ -713,6 +713,33 @@ void dec_RoPE_layer_qk(
     }
 }
 
+//MHA
+void dec_RoPE_layer_qk_hbm(
+    tapa::istream<hls::vector<float, DEC_HEAD_PARALLEL>>& input_stream,
+    tapa::ostream<hls::vector<float, DEC_HEAD_PARALLEL>>& output_stream,
+    tapa::mmap<hls::vector<float, 2>> PE_sin_cos_mmap,
+    int pre_seq_len,
+    int dec_seq_len
+){
+    decoder_seq_loop: for (int dec_seq_id = 0; dec_seq_id < dec_seq_len; dec_seq_id++){
+        decoder_block_loop: for (int block_id = 0; block_id < DECODER_LAYER_NUM; block_id++){
+            dec_RoPE_layer_memory<float, DEC_HEAD_PARALLEL, HEAD_DIM, Q_HEAD_NUM>(
+                input_stream, output_stream, PE_sin_cos_mmap, KV_HEAD_NUM, pre_seq_len + dec_seq_id
+            ); // for k
+            printf("Dec_seq_id %d: Block_id %d: RoPE_layer completed for k.\n", dec_seq_id, block_id);
+
+            dec_io_buffer<float, DEC_HEAD_PARALLEL, DEC_HEAD_PARALLEL, KV_HIDDEN_DIM>(
+                input_stream, output_stream, KV_HIDDEN_DIM
+            ); // for v
+
+            dec_RoPE_layer_memory<float, DEC_HEAD_PARALLEL, HEAD_DIM, Q_HEAD_NUM>(
+                input_stream, output_stream, PE_sin_cos_mmap, Q_HEAD_NUM, pre_seq_len + dec_seq_id
+            ); // for q
+            printf("Dec_seq_id %d: Block_id %d: RoPE_layer completed for q.\n", dec_seq_id, block_id);
+        }
+    }
+}
+
 
 void dec_quant_layer_qkv_fp32_int8(
     tapa::istream<hls::vector<float, DEC_HEAD_PARALLEL>>& qkv_stream,
@@ -1011,7 +1038,7 @@ void SpinQuant_Decoding(
     tapa::stream<hls::vector<ap_int<8>, DEC_HEAD_PARALLEL>> quant_v_stream("quant_v_stream");
 
     // tapa::streams<ap_int<8>, DEC_HEAD_PARALLEL> quant_q_loaders("quant_q_loaders");
-    tapa::streams<hls::vector<ap_int<8>, DEC_K_PARALLEL>, DEC_HEAD_PARALLEL> cache_quant_k_streams("cache_quant_k_streams");
+    tapa::streams<ap_int<8>, DEC_HEAD_PARALLEL> cache_quant_k_streams("cache_quant_k_streams");
     tapa::streams<hls::vector<ap_int<8>, DEC_K_PARALLEL>, DEC_HEAD_PARALLEL> load_quant_k_streams("load_quant_k_streams");
     // tapa::streams<ap_int<log2_HEAD_DIM + 16>, DEC_HEAD_PARALLEL> quant_a_drainers("quant_a_drainers");
 
@@ -1065,11 +1092,11 @@ void SpinQuant_Decoding(
     .invoke(dec_qkvo_FFN_input_merger, ln_iembed_stream, input_o_stream, ln_res0_stream, input_ffn_down_stream, ln_res1_stream, input_qkvo_ffn_stream, dec_seq_len)
     .invoke(dec_quant_layer_qkvo_FFN, input_qkvo_ffn_stream, input_s_b_qkvo_ffn_stream, quant_input_qkvo_ffn_stream, dec_seq_len)
 
-    // .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
-    // .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0_k, w_qkvo_ffn_streams_half_0, dec_seq_len)
-    // .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1, w_qkvo_ffn_streams_half_1, dec_seq_len)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0_k_caches, w_qkvo_ffn_streams_half_0, dec_seq_len, 0)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1_v_caches, w_qkvo_ffn_streams_half_1, dec_seq_len, 0)
+    // .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
+    // .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0_k, w_qkvo_ffn_streams_half_0, dec_seq_len)
+    // .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1, w_qkvo_ffn_streams_half_1, dec_seq_len)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0_k_caches, w_qkvo_ffn_streams_half_0, dec_seq_len, 0)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1_v_caches, w_qkvo_ffn_streams_half_1, dec_seq_len, 0)
 
     .invoke(dec_weight_s_loader_qkvo_FFN, w_s_sum_qkvo_FFN_mmap, w_s_sum_qkvo_ffn_stream, dec_seq_len, 0)
 
@@ -1088,7 +1115,7 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_qkv_distributor, quant_qkv_stream, quant_k_stream, quant_v_stream, quant_q_stream, dec_seq_len)
 
     .invoke(dec_K_cache_buffer, quant_k_stream, cache_quant_k_streams, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, w_qkvo_FFN_mmaps_half_0_k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, w_qkvo_FFN_mmaps_half_0_k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
 
     .invoke(dec_MHA_i8xi8_qxk, quant_q_stream, load_quant_k_streams, quant_a_stream_redundant, pre_seq_len, dec_seq_len)
 
@@ -1099,7 +1126,7 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_layer_sfm_a_fp32_int8, sfm_a_stream, quant_sfm_a_stream, pre_seq_len, dec_seq_len)
 
     .invoke(dec_V_cache_buffer, quant_v_stream, cache_quant_v_streams, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, w_qkvo_FFN_mmaps_half_1_v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, w_qkvo_FFN_mmaps_half_1_v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
 
     .invoke(dec_MHA_i8xi8_axv, quant_sfm_a_stream, load_quant_v_streams, quant_o_stream, pre_seq_len, dec_seq_len)
 
@@ -1129,7 +1156,6 @@ void SpinQuant_Decoding(
 
 
 #endif
-
 
 
 

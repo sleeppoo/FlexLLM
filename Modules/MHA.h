@@ -113,7 +113,7 @@ void pref_K_cache_manager_template(
 template <int block_size_a, int block_size_b, int max_log2_k_size = log2_HIDDEN_DIM, bool is_uint_A = false>
 void systolic_array_i8xi8_pack_2x2(
     hls::stream<hls::vector<ap_int<8>, block_size_a>>& A_loader,
-    hls::stream<hls::vector<ap_int<8>, block_size_b>>& B_loader, 
+    hls::stream<hls::vector<ap_int<8>, block_size_b>>& B_loader,
     hls::stream<hls::vector<ap_int<max_log2_k_size + 16>, block_size_a>>& C_drainer,
     int k_size
   ) {
@@ -123,27 +123,27 @@ void systolic_array_i8xi8_pack_2x2(
     #pragma HLS BIND_STORAGE variable=A_fifo type=fifo impl=srl
     #pragma HLS STREAM variable=B_fifo depth=block_size_b/2 + 1
     #pragma HLS BIND_STORAGE variable=B_fifo type=fifo impl=srl
-  
+
     hls::stream<ap_uint<2*max_log2_k_size + 32>> C_fifo[block_size_a/2][block_size_b/2];
     #pragma HLS STREAM variable=C_fifo depth=block_size_a/2 + 1
     #pragma HLS BIND_STORAGE variable=A_fifo type=fifo impl=srl
-  
+
     #pragma HLS DATAFLOW
     data_load_AB:for (int k = 0; k < k_size; k++) {
     #pragma HLS PIPELINE II=1
     #pragma HLS LOOP_TRIPCOUNT min=1 max=(1<<max_log2_k_size)
         hls::vector<ap_int<8>, block_size_a> A_temp = A_loader.read();
         hls::vector<ap_int<8>, block_size_b> B_temp = B_loader.read();
-  
+
         for (int m = 0; m < block_size_a/2; m++) {
             A_fifo[m][0].write(ap_uint<16>((A_temp[2*m + 1],A_temp[2*m])));
         }
-        
+
         for (int n = 0; n < block_size_b/2; n++) {
             B_fifo[n][0].write(ap_uint<16>((B_temp[2*n + 1], B_temp[2*n])));
         }
     }
-  
+
     systolic_array: for (int m = 0; m < block_size_a/2; m++) {
     #pragma HLS UNROLL
         for (int n = 0; n < block_size_b/2; n++) {
@@ -158,7 +158,7 @@ void systolic_array_i8xi8_pack_2x2(
                 PE_i8xi8_pack_2x2_2xDSP_2D<is_uint_A, max_log2_k_size, false, false>(A_fifo[m][n], A_fifo[m][n+1], B_fifo[n][m], B_fifo[n][m+1], C_fifo[m][n], k_size);
         }
     }
-  
+
     // data_drain_AB:for (int k = 0; k < k_size; k++) {
     // #pragma HLS PIPELINE II=1
     // #pragma HLS LOOP_TRIPCOUNT min=1 max=(1<<max_log2_k_size)
@@ -169,7 +169,7 @@ void systolic_array_i8xi8_pack_2x2(
     //         B_fifo[n][block_size_a/2].read();
     //     }
     // }
-  
+
     data_drain_C: for (int n = 0; n < block_size_b/2; n++) {
     #pragma HLS PIPELINE II=2
         hls::vector<ap_int<max_log2_k_size + 16>, block_size_a> C_temp;
@@ -317,7 +317,7 @@ void pref_V_cache_manager_template(
         }
     }
     cout << "Block_id: " << block_id << " V_cache storing completed." << endl;
-    
+
     output_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
         attn_head_loop: for (int H = 0; H < V_head_num; H++){
             attn_group_loop: for (int G = 0; G < group_num; G++){
@@ -344,7 +344,7 @@ void pref_MHA_i8xi8_axv_template(
     int seq_len = max_seq_len
 ){
     hls::vector<ap_int<8>, io_parallel> A[max_seq_len];
-      
+
     hls::stream<hls::vector<ap_int<8>, io_parallel>> block_A_loader;
     #pragma HLS BIND_STORAGE variable=block_A_loader type=fifo impl=srl
 
@@ -354,7 +354,7 @@ void pref_MHA_i8xi8_axv_template(
     hls::stream<hls::vector<ap_int<log2_max_seq_len + 16>, io_parallel>> block_C_drainer;
     #pragma HLS BIND_STORAGE variable=block_C_drainer type=fifo impl=srl
 
-    
+
     io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
     #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
         attn_head_loop: for (int H = 0; H < mha_head_num; H++){
@@ -404,7 +404,7 @@ void dec_K_s_cache_manager_template(
         int bias = addr_bias + (block_id * K_head_num/head_parallel + H) * max_sum_seq_len + seq_id;
         k_s_cache[bias] = input_k_s_stream.read();
     }
-    
+
     // read k
     o_k_s_head_loop: for (int H = 0; H < K_head_num/head_parallel; H++){
         attn_group_loop: for (int G = 0; G < group_num; G++){
@@ -431,7 +431,7 @@ void dec_K_s_cache_manager_static_template(
         int bias = addr_bias + (block_id * K_head_num/head_parallel + H) * max_sum_seq_len + seq_id;
         output_k_s_stream.write(k_s_cache[bias]);
     }
-    
+
     // read k
     o_k_s_head_loop: for (int H = 0; H < K_head_num/head_parallel; H++){
         attn_group_loop: for (int G = 0; G < group_num; G++){
@@ -444,46 +444,62 @@ void dec_K_s_cache_manager_static_template(
     }
 }
 
-template <typename T, int head_parallel, int K_parallel, int K_hidden_dim=KV_HIDDEN_DIM, int decoder_layer_num=DECODER_LAYER_NUM>
+// template <typename T, int head_parallel, int K_parallel, int K_hidden_dim=KV_HIDDEN_DIM, int decoder_layer_num=DECODER_LAYER_NUM>
+// void dec_K_cache_buffer_template(
+//     tapa::istream<hls::vector<T, head_parallel>>& input_k_stream,
+//     tapa::ostreams<hls::vector<T, K_parallel>, head_parallel>& output_k_streams,
+//     int block_id,
+//     int seq_id
+// ){
+//     static T k_reg[head_parallel][K_hidden_dim/head_parallel][K_parallel];
+//     #pragma HLS ARRAY_PARTITION variable=k_reg type=complete dim=1
+//     #pragma HLS ARRAY_PARTITION variable=k_reg type=cyclic factor=K_parallel/2 dim=3
+
+//     reg_k_loop: for (int k = 0; k < K_hidden_dim/head_parallel; k++) {
+//     #pragma HLS pipeline II=1
+//         hls::vector<T, head_parallel> data_pack = input_k_stream.read();
+//         for (int i = 0; i < head_parallel; i++) {
+//             if(seq_id % K_parallel == 0) {
+//                 for(int j = 0; j < K_parallel; j++){
+//                     k_reg[i][k][j] = 0;
+//                 }
+//             }
+//             k_reg[i][k][seq_id % K_parallel] = data_pack[i];
+//         }
+//     }
+
+//     send_k_loop: for (int k = 0; k < K_hidden_dim/head_parallel; k++) {
+//     #pragma HLS pipeline II=1
+//         for (int i = 0; i < head_parallel; i++) {
+//             hls::vector<T, K_parallel> K_cache_pack;
+//             for(int j = 0; j < K_parallel; j++){
+//                 K_cache_pack[j] = k_reg[i][k][j] ;
+//             }
+//             output_k_streams[i].write(K_cache_pack);
+//         }
+//     }
+// }
+
+
+template <typename T, int head_parallel, int K_hidden_dim=KV_HIDDEN_DIM, int decoder_layer_num=DECODER_LAYER_NUM>
 void dec_K_cache_buffer_template(
     tapa::istream<hls::vector<T, head_parallel>>& input_k_stream,
-    tapa::ostreams<hls::vector<T, K_parallel>, head_parallel>& output_k_streams,
+    tapa::ostreams<T, head_parallel>& output_k_streams,
     int block_id,
     int seq_id
 ){
-    static T k_reg[head_parallel][K_hidden_dim/head_parallel][K_parallel];
-    #pragma HLS ARRAY_PARTITION variable=k_reg type=complete dim=1
-    #pragma HLS ARRAY_PARTITION variable=k_reg type=cyclic factor=K_parallel/2 dim=3
-
     reg_k_loop: for (int k = 0; k < K_hidden_dim/head_parallel; k++) {
     #pragma HLS pipeline II=1
         hls::vector<T, head_parallel> data_pack = input_k_stream.read();
         for (int i = 0; i < head_parallel; i++) {
-            if(seq_id % K_parallel == 0) {
-                for(int j = 0; j < K_parallel; j++){
-                    k_reg[i][k][j] = 0;
-                }
-            }
-            k_reg[i][k][seq_id % K_parallel] = data_pack[i];
-        }
-    }
-
-    send_k_loop: for (int k = 0; k < K_hidden_dim/head_parallel; k++) {
-    #pragma HLS pipeline II=1
-        for (int i = 0; i < head_parallel; i++) {
-            hls::vector<T, K_parallel> K_cache_pack;
-            for(int j = 0; j < K_parallel; j++){
-                K_cache_pack[j] = k_reg[i][k][j] ;
-            }
-            output_k_streams[i].write(K_cache_pack);
+            output_k_streams[i].write(data_pack[i]);
         }
     }
 }
 
-
 template <typename T, int head_parallel, int K_parallel, int K_head_num, int K_head_dim=HEAD_DIM, int group_num=ATTN_GROUP_NUM, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
 void dec_K_cache_manager_template(
-    tapa::istream<hls::vector<T, K_parallel>>& input_k_stream,
+    tapa::istream<T>& input_k_stream,
     tapa::mmap<hls::vector<T, K_parallel>>& k_cache,
     tapa::ostream<hls::vector<T, K_parallel>>& output_k_stream,
     int block_id,
@@ -494,11 +510,12 @@ void dec_K_cache_manager_template(
         int bias = addr_bias + ((block_id * K_head_num/head_parallel + H) * max_sum_seq_len + seq_id)/K_parallel * K_head_dim;
         store_k_loop: for(int i = 0; i < K_head_dim; i++){
         #pragma HLS pipeline II=1
-            k_cache[bias + i] = input_k_stream.read();
+            k_cache[bias + i][seq_id % K_parallel] = input_k_stream.read();
+            // T discard = input_k_stream.read();
         }
     }
     printf("Sum_seq_id %d: Block_id %d: K_cache_manager storing completed.\n", seq_id, block_id);
-    
+
 
     int seq_block_id = seq_id / K_parallel;
     // read k
@@ -517,7 +534,7 @@ void dec_K_cache_manager_template(
 
 template <typename T, int head_parallel, int K_parallel_read, int K_parallel, int K_head_num, int K_head_dim=HEAD_DIM, int group_num=ATTN_GROUP_NUM, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
 void dec_K_cache_manager_discard_template(
-    tapa::istream<hls::vector<T, K_parallel>>& input_k_stream,
+    tapa::istream<T>& input_k_stream,
     tapa::mmap<hls::vector<T, K_parallel_read>>& k_cache,
     tapa::ostream<hls::vector<T, K_parallel>>& output_k_stream,
     int block_id,
@@ -528,16 +545,11 @@ void dec_K_cache_manager_discard_template(
         int bias = addr_bias + ((block_id * K_head_num/head_parallel + H) * max_sum_seq_len + seq_id)/K_parallel * K_head_dim;
         store_k_loop: for(int i = 0; i < K_head_dim; i++){
         #pragma HLS pipeline II=1
-            hls::vector<T, K_parallel> input_pack = input_k_stream.read();
-            hls::vector<T, K_parallel_read> k_pack;
-            for(int j = 0; j < K_parallel; j++){
-                k_pack[j] = input_pack[j];
-            }
-            k_cache[bias + i] = k_pack;
+            k_cache[bias + i][seq_id % K_parallel] = input_k_stream.read();
         }
     }
     printf("Sum_seq_id %d: Block_id %d: K_cache_manager storing completed.\n", seq_id, block_id);
-    
+
 
     int seq_block_id = seq_id / K_parallel;
     // read k
@@ -564,7 +576,7 @@ void dec_K_cache_manager_discard_template(
 template <int block_size_b, int max_log2_k_size = log2_HIDDEN_DIM, bool is_uint_A = false>
 void systolic_array_i8xi8_pack_1x2_1D(
     hls::stream<ap_int<8>>& A_loader,
-    hls::stream<hls::vector<ap_int<8>, block_size_b>>& B_loader, 
+    hls::stream<hls::vector<ap_int<8>, block_size_b>>& B_loader,
     hls::stream<ap_int<max_log2_k_size + 16>>& C_drainer,
     int k_size
   ) {
@@ -575,11 +587,11 @@ void systolic_array_i8xi8_pack_1x2_1D(
     hls::stream<ap_uint<16>> B_fifo[block_size_b/2];
     #pragma HLS STREAM variable=B_fifo depth=block_size_b/2 + 1
     #pragma HLS BIND_STORAGE variable=B_fifo type=fifo impl=srl
-  
+
     hls::stream<ap_int<max_log2_k_size + 16>> C_fifo[block_size_b/2];
     #pragma HLS STREAM variable=C_fifo depth=block_size_b/2
     #pragma HLS BIND_STORAGE variable=A_fifo type=fifo impl=srl
-  
+
     #pragma HLS DATAFLOW
     data_load_AB:for (int k = 0; k < k_size; k++) {
     #pragma HLS PIPELINE II=1
@@ -588,12 +600,12 @@ void systolic_array_i8xi8_pack_1x2_1D(
         hls::vector<ap_int<8>, block_size_b> B_temp = B_loader.read();
 
         A_fifo[0].write(A_temp);
-        
+
         for (int n = 0; n < block_size_b/2; n++) {
             B_fifo[n].write(ap_uint<16>((B_temp[2*n + 1], B_temp[2*n])));
         }
     }
-    
+
     for (int n = 0; n < block_size_b/2; n++) {
     #pragma HLS UNROLL
         if(n == block_size_b/2 - 1)
@@ -601,8 +613,8 @@ void systolic_array_i8xi8_pack_1x2_1D(
         else
             PE_i8xi8_pack_1x2_1xDSP_1D<is_uint_A, max_log2_k_size>(A_fifo[n], A_fifo[n+1], B_fifo[n], C_fifo[n], k_size);
     }
-    
-  
+
+
     data_drain_C: for (int n = 0; n < block_size_b/2; n++) {
     #pragma HLS PIPELINE II=2
         C_drainer.write(C_fifo[n].read());
@@ -630,7 +642,7 @@ void dec_MHA_i8xi8_qxk_template(
     hls::stream<ap_int<log2_mha_head_dim + 16>> block_C_drainer[head_parallel];
     #pragma HLS BIND_STORAGE variable=block_C_drainer type=fifo impl=srl
 
-    
+
     in_buf_loop: for (int k = 0; k < mha_head_num/head_parallel * mha_head_dim; k++) {    // L19
     #pragma HLS pipeline II=1
         A[k] = input_seq.read();
@@ -665,7 +677,7 @@ void dec_MHA_i8xi8_qxk_template(
             }
         }
     }
-    
+
 }
 
 template <typename T, int head_parallel, int K_parallel, int mha_head_num, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
@@ -707,7 +719,7 @@ void dec_quant_a_discard_template(
 //         }
 //     }
 // }
-        
+
 
 
 template <typename T, int head_parallel, int V_head_num, int V_head_dim=HEAD_DIM, int group_num=ATTN_GROUP_NUM>
@@ -786,8 +798,8 @@ void dec_V_cache_manager_template(
         v_cache[bias] = input_v_stream.read();
     }
     printf("Sum_seq_id %d: Block_id %d: V_cache_manager storing completed.\n", seq_id, block_id);
-    
-    
+
+
     attn_head_loop: for (int H = 0; H < V_head_num/head_parallel; H++){
         attn_group_loop: for (int G = 0; G < group_num; G++){
             attn_seq_loop: for(int h_block = 0; h_block < V_head_dim/V_parallel; h_block++){
@@ -800,7 +812,63 @@ void dec_V_cache_manager_template(
         }
     }
     printf("Sum_seq_id %d: Block_id %d: V_cache_manager loading completed.\n", seq_id, block_id);
-    
+}
+
+
+template <typename T, int head_parallel, int V_parallel, int V_head_num, int V_head_dim=HEAD_DIM, int group_num=ATTN_GROUP_NUM, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
+void dec_V_cache_manager_template_merged(
+    tapa::istreams<hls::vector<T, V_parallel>, head_parallel>& input_v_stream,
+    tapa::mmaps<hls::vector<T, V_parallel>, head_parallel>& v_cache,
+    tapa::ostreams<hls::vector<T, V_parallel>, head_parallel>& output_v_stream,
+    int block_id,
+    int seq_id,
+    int addr_bias = 0
+){
+    input_block_loop: for (int N = 0; N < V_head_num/head_parallel * V_head_dim/V_parallel; N++){
+    #pragma HLS pipeline II=1
+        // store v
+        int bias = addr_bias + (block_id * V_head_num/head_parallel * V_head_dim/V_parallel + N) * max_sum_seq_len + seq_id;
+        v_cache[bias] = input_v_stream.read();
+    }
+    printf("Sum_seq_id %d: Block_id %d: V_cache_manager storing completed.\n", seq_id, block_id);
+
+
+    attn_head_loop: for (int H = 0; H < V_head_num/head_parallel; H++){
+        attn_group_loop: for (int G = 0; G < group_num; G++){
+            attn_seq_loop: for(int h_block = 0; h_block < V_head_dim/V_parallel; h_block++){
+                int bias = addr_bias + ((block_id * V_head_num/head_parallel + H) * V_head_dim/V_parallel + h_block) * max_sum_seq_len;
+                read_v_loop: for(int i = 0; i <= seq_id; i++){
+                #pragma HLS pipeline II=1
+                    output_v_stream.write(v_cache[bias + i]);
+                }
+            }
+        }
+    }
+    printf("Sum_seq_id %d: Block_id %d: V_cache_manager loading completed.\n", seq_id, block_id);
+
+}
+
+template <typename T, int head_parallel, int V_parallel, int V_head_num, int V_head_dim=HEAD_DIM, int group_num=ATTN_GROUP_NUM, int max_sum_seq_len=MAX_SUM_SEQ_LEN>
+void dec_V_cache_manager_template_dummy(
+    tapa::istream<hls::vector<T, V_parallel>>& input_v_stream,
+    tapa::ostream<hls::vector<T, V_parallel>>& output_v_stream,
+    int block_id,
+    int seq_id,
+    int addr_bias = 0
+){
+    attn_head_loop: for (int H = 0; H < V_head_num/head_parallel; H++){
+        attn_group_loop: for (int G = 0; G < group_num; G++){
+            attn_seq_loop: for(int h_block = 0; h_block < V_head_dim/V_parallel; h_block++){
+                int bias = addr_bias + ((block_id * V_head_num/head_parallel + H) * V_head_dim/V_parallel + h_block) * max_sum_seq_len;
+                read_v_loop: for(int i = 0; i <= seq_id; i++){
+                #pragma HLS pipeline II=1
+                    // output_v_stream.write(v_cache[bias + i]);
+                    output_v_stream.write(hls::vector<T, V_parallel>(1));
+                }
+            }
+        }
+    }
+    printf("Sum_seq_id %d: Block_id %d: V_cache_manager loading completed.\n", seq_id, block_id);
 }
 
 
@@ -823,11 +891,11 @@ void dec_V_cache_manager_discard_template(
             v_pack[j] = input_pack[j];
         }
         v_cache[bias] = v_pack;
-        
+
     }
     printf("Sum_seq_id %d: Block_id %d: V_cache_manager storing completed.\n", seq_id, block_id);
-    
-    
+
+
     attn_head_loop: for (int H = 0; H < V_head_num/head_parallel; H++){
         attn_group_loop: for (int G = 0; G < group_num; G++){
             attn_seq_loop: for(int h_block = 0; h_block < V_head_dim/V_parallel; h_block++){
@@ -841,13 +909,13 @@ void dec_V_cache_manager_discard_template(
                         output_pack[j] = v_pack[j];
                     }
                     output_v_stream.write(output_pack);
-                    
+
                 }
             }
         }
     }
     printf("Sum_seq_id %d: Block_id %d: V_cache_manager loading completed.\n", seq_id, block_id);
-    
+
 }
 
 
@@ -859,7 +927,7 @@ void dec_MHA_i8xi8_axv_template(
     int seq_len
 ){
     hls::vector<ap_int<8>, head_parallel> A[max_sum_seq_len];
-      
+
     hls::stream<ap_int<8>> block_A_loader[head_parallel];
     #pragma HLS BIND_STORAGE variable=block_A_loader type=fifo impl=srl
 

@@ -777,7 +777,7 @@ void dec_quant_qkv_distributor(
 
 
 void dec_K_cache_discard_manager(
-    tapa::istream<hls::vector<ap_int<8>, DEC_K_PARALLEL>>& input_k_stream,
+    tapa::istream<ap_int<8>>& input_k_stream,
     tapa::mmap<hls::vector<ap_int<8>, 2 * DEC_K_PARALLEL>> k_cache,
     tapa::ostream<hls::vector<ap_int<8>, DEC_K_PARALLEL>>& output_k_stream,
     int pre_seq_len,
@@ -1046,7 +1046,7 @@ void SpinQuant_Decoding(
     tapa::stream<hls::vector<ap_int<8>, DEC_HEAD_PARALLEL>> quant_v_stream("quant_v_stream");
 
     // tapa::streams<ap_int<8>, DEC_HEAD_PARALLEL> quant_q_loaders("quant_q_loaders");
-    tapa::streams<hls::vector<ap_int<8>, DEC_K_PARALLEL>, DEC_HEAD_PARALLEL> cache_quant_k_streams("cache_quant_k_streams");
+    tapa::streams<ap_int<8>, DEC_HEAD_PARALLEL> cache_quant_k_streams("cache_quant_k_streams");
     tapa::streams<hls::vector<ap_int<8>, DEC_K_PARALLEL>, DEC_HEAD_PARALLEL> load_quant_k_streams("load_quant_k_streams");
     // tapa::streams<ap_int<log2_HEAD_DIM + 16>, DEC_HEAD_PARALLEL> quant_a_drainers("quant_a_drainers");
 
@@ -1100,9 +1100,9 @@ void SpinQuant_Decoding(
     .invoke(dec_qkvo_FFN_input_merger, ln_iembed_stream, input_o_stream, ln_res0_stream, input_ffn_down_stream, ln_res1_stream, input_qkvo_ffn_stream, dec_seq_len)
     .invoke(dec_quant_layer_qkvo_FFN, input_qkvo_ffn_stream, input_s_b_qkvo_ffn_stream, quant_input_qkvo_ffn_stream, dec_seq_len)
 
-    // .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/4>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_quart_01_k_caches, w_qkvo_ffn_streams_quart_0,  w_qkvo_ffn_streams_quart_1, dec_seq_len, 0)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/4>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_quart_23_v_caches, w_qkvo_ffn_streams_quart_2,  w_qkvo_ffn_streams_quart_3, dec_seq_len, 0)
+    // .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/4>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_quart_01_k_caches, w_qkvo_ffn_streams_quart_0,  w_qkvo_ffn_streams_quart_1, dec_seq_len, 0)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/4>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_quart_23_v_caches, w_qkvo_ffn_streams_quart_2,  w_qkvo_ffn_streams_quart_3, dec_seq_len, 0)
 
     .invoke(dec_weight_s_loader_qkvo_FFN, w_s_sum_qkvo_FFN_mmap, w_s_sum_qkvo_ffn_stream, dec_seq_len, 0)
 
@@ -1123,7 +1123,7 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_qkv_distributor, quant_qkv_stream, quant_k_stream, quant_v_stream, quant_q_stream, dec_seq_len)
 
     .invoke(dec_K_cache_buffer, quant_k_stream, cache_quant_k_streams, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_K_cache_discard_manager, cache_quant_k_streams, w_qkvo_FFN_mmaps_quart_01_k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_K_cache_discard_manager, cache_quant_k_streams, w_qkvo_FFN_mmaps_quart_01_k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
 
     .invoke(dec_MHA_i8xi8_qxk, quant_q_stream, load_quant_k_streams, quant_a_stream_redundant, pre_seq_len, dec_seq_len)
 
@@ -1134,7 +1134,7 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_layer_sfm_a_fp32_int8, sfm_a_stream, quant_sfm_a_stream, pre_seq_len, dec_seq_len)
 
     .invoke(dec_V_cache_buffer, quant_v_stream, cache_quant_v_streams, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_V_cache_discard_manager, cache_quant_v_streams, w_qkvo_FFN_mmaps_quart_23_v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_V_cache_discard_manager, cache_quant_v_streams, w_qkvo_FFN_mmaps_quart_23_v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, w_qkvo_FFN_size)
 
     .invoke(dec_MHA_i8xi8_axv, quant_sfm_a_stream, load_quant_v_streams, quant_o_stream, pre_seq_len, dec_seq_len)
 
@@ -1164,7 +1164,6 @@ void SpinQuant_Decoding(
 
 
 #endif
-
 
 
 

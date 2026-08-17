@@ -5,3 +5,15 @@ work.out/
 build/
 *.gguf
 */__pycache__
+*.bak
+*.log
+*.xo
+*.o
+__pycache__/
+build_make/
+RapidStream/build/
+SpinQuant_Llama_32_1B_Ins/SpinQuant_Decoding_mem_opt
+SpinQuant_Llama_32_1B_Ins/run/SpinQuant_Decoding_mem_opt
+SpinQuant_Llama_32_1B_Ins/run/SpinQuant_Prefilling_Incremental_Decoding_mem_opt_tb
+SpinQuant_Llama_32_1B_Ins/run/my_prompt_token_idx.txt
+SpinQuant_Llama_32_1B_Ins/run/my_sampled_token_idx_*.txt

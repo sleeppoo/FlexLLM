@@ -1062,9 +1062,9 @@ void SpinQuant_Decoding(
     .invoke(dec_qkvo_FFN_input_merger, ln_iembed_stream, input_o_stream, ln_res0_stream, input_ffn_down_stream, ln_res1_stream, input_qkvo_ffn_stream, dec_seq_len)
     .invoke(dec_quant_layer_qkvo_FFN, input_qkvo_ffn_stream, input_s_b_qkvo_ffn_stream, quant_input_qkvo_ffn_stream, dec_seq_len)
 
-    // .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL>(weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0, w_qkvo_ffn_streams_half_0, dec_seq_len)
-    .invoke<tapa::detach, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1, w_qkvo_ffn_streams_half_1, dec_seq_len)
+    // .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL>(weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps, w_qkvo_ffn_streams, dec_seq_len)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_0, w_qkvo_ffn_streams_half_0, dec_seq_len)
+    .invoke<tapa::join, T_QKVO_FFN_BLOCK_PARALLEL/2>(dec_weight_loader_qkvo_FFN, w_qkvo_FFN_mmaps_half_1, w_qkvo_ffn_streams_half_1, dec_seq_len)
     
 
     .invoke(dec_weight_s_loader_qkvo_FFN, w_s_sum_qkvo_FFN_mmap, w_s_sum_qkvo_ffn_stream, dec_seq_len)
@@ -1084,7 +1084,7 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_qkv_distributor, quant_qkv_stream, quant_k_stream, quant_v_stream, quant_q_stream, dec_seq_len)
 
     .invoke(dec_K_cache_buffer, quant_k_stream, cache_quant_k_streams, pre_seq_len, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_K_cache_manager, cache_quant_k_streams, k_caches, load_quant_k_streams, pre_seq_len, dec_seq_len, 0)
 
     .invoke(dec_MHA_i8xi8_qxk, quant_q_stream, load_quant_k_streams, quant_a_stream_redundant, pre_seq_len, dec_seq_len)
 
@@ -1095,11 +1095,11 @@ void SpinQuant_Decoding(
     .invoke(dec_quant_layer_sfm_a_fp32_int8, sfm_a_stream, quant_sfm_a_stream, pre_seq_len, dec_seq_len)
 
     .invoke(dec_V_cache_buffer, quant_v_stream, cache_quant_v_streams, dec_seq_len)
-    .invoke<tapa::detach, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, 0)
+    .invoke<tapa::join, DEC_HEAD_PARALLEL>(dec_V_cache_manager, cache_quant_v_streams, v_caches, load_quant_v_streams, pre_seq_len, dec_seq_len, 0)
 
     .invoke(dec_MHA_i8xi8_axv, quant_sfm_a_stream, load_quant_v_streams, quant_o_stream, pre_seq_len, dec_seq_len)
     // .invoke(dec_MHA_i8xi8_axv_input_broadcastor, quant_sfm_a_stream, quant_sfm_a_loaders, pre_seq_len, dec_seq_len)
-    // .invoke<tapa::detach, DEC_HEAD_PARALLEL>(
+    // .invoke<tapa::join, DEC_HEAD_PARALLEL>(
     //     dec_MHA_i8xi8_axv_flatten, quant_sfm_a_loaders, load_quant_v_streams, quant_o_drainers, pre_seq_len, dec_seq_len
     // )
     // .invoke(dec_MHA_i8xi8_axv_output_merger, quant_o_drainers, quant_o_stream, dec_seq_len)
