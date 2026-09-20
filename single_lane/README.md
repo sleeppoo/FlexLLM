@@ -24,9 +24,17 @@ does neither while the single lane is being validated.
 make -C single_lane test
 ```
 
-This tests the standard-C++ reference and, when Icarus Verilog is installed,
-the isolated RTL arithmetic/handshake. It does not require TAPA, Vitis, Vivado,
-or AMD headers. These tests do not prove DSP58 mapping.
+This runs the standard-C++ reference and the isolated RTL arithmetic/handshake
+with Synopsys VCS. It does not require TAPA, Vitis, Vivado, or AMD headers:
+
+```sh
+make -C single_lane cpp-test
+make -C single_lane rtl-test VCS=/path/to/vcs
+```
+
+`VCS=/path/to/vcs` can be omitted when `vcs` is already in `PATH`. An optional
+Icarus fallback remains available as `make -C single_lane rtl-test-iverilog`.
+These behavioral RTL tests do not prove DSP58 mapping.
 
 ## Vitis HLS blackbox
 
@@ -41,8 +49,8 @@ vitis-run --mode hls --config hls_config.cfg --work_dir build
 The supplied RTL explicitly instantiates DSP58 using the packing and control
 configuration from the previously validated `dsp58_dot3_acc` experiment. Its
 external accumulator was deliberately removed: the DSP58 C input is tied to
-zero, and the long accumulator remains in HLS. The open-source RTL test defines
-`FLEXLLM_DSP58_BEHAVIORAL_SIM` because Icarus Verilog has no UNISIM DSP58 model;
+zero, and the long accumulator remains in HLS. The standalone VCS test defines
+`FLEXLLM_DSP58_BEHAVIORAL_SIM`, so it does not require a UNISIM DSP58 model.
 Vitis/Vivado builds must leave this macro undefined.
 
 Check after synthesis/implementation:

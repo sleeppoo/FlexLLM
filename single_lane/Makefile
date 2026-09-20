@@ -1,12 +1,25 @@
 CXX ?= g++
 CXXFLAGS ?= -std=c++17 -O2 -Wall -Wextra -Werror
+VCS ?= vcs
 
-.PHONY: test rtl-test clean
+.PHONY: test cpp-test rtl-test rtl-test-iverilog clean
 
-test: build/test_single_lane rtl-test
+test: cpp-test rtl-test
+
+cpp-test: build/test_single_lane
 	./build/test_single_lane
 
-rtl-test: build/tb_dsp58_dot3_int8
+rtl-test: build/simv
+	./build/simv
+
+build/simv: tests/tb_dsp58_dot3_int8.v rtl/dsp58_dot3_int8.v
+	mkdir -p build
+	$(VCS) -full64 -sverilog -timescale=1ns/1ps \
+		+define+FLEXLLM_DSP58_BEHAVIORAL_SIM \
+		-top tb_dsp58_dot3_int8 -Mdir=build/vcs_csrc -o $@ $^
+
+# Optional fallback for environments that have Icarus Verilog.
+rtl-test-iverilog: build/tb_dsp58_dot3_int8
 	vvp build/tb_dsp58_dot3_int8
 
 build/tb_dsp58_dot3_int8: tests/tb_dsp58_dot3_int8.v rtl/dsp58_dot3_int8.v
