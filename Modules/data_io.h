@@ -3,370 +3,6 @@
 
 #include "config.h"
 
-template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_input_loader(
-    tapa::mmap<hls::vector<T, io_parallel>> input_mmap,
-    tapa::ostream<hls::vector<T, io_parallel>>& input_stream, 
-    int block_id,
-    int seq_len = max_seq_len,
-    int input_hidden_dim = max_hidden_dim,
-    int addr_bias = 0
-){
-    int bias = addr_bias + block_id * max_seq_len/io_parallel*input_hidden_dim;
-    read_input_loop: for(int i = 0; i < seq_len/io_parallel*input_hidden_dim; i++){
-    #pragma HLS pipeline II=1
-        hls::vector<T, io_parallel> input_pack = input_mmap[bias + i];
-        input_stream.write(input_pack);
-    }
-}
-
-template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_output_drainer(
-    tapa::istream<hls::vector<T, io_parallel>>& output_stream,
-    tapa::mmap<hls::vector<T, io_parallel>> output_mmap, 
-    int block_id,
-    int seq_len = max_seq_len,
-    int output_hidden_dim = max_hidden_dim,
-    int addr_bias = 0
-){
-    int bias = addr_bias + block_id * max_seq_len/io_parallel*output_hidden_dim;
-    write_output_loop: for(int i = 0; i < seq_len/io_parallel*output_hidden_dim; i++){
-    #pragma HLS pipeline II=1
-        hls::vector<T, io_parallel> output_pack = output_stream.read();
-        output_mmap[bias + i] = output_pack;
-    }
-}
-
-
-
-template <typename T, int io_parallel, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_discard(
-    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
-    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int in_hidden_dim = max_in_hidden_dim,
-    int out_hidden_dim = max_out_hidden_dim
-){
-    io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
-    #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-        pass_loop: for (int k = 0; k < out_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            output_stream.write(input_stream.read());
-        }
-        discard_loop: for (int k = 0; k < in_hidden_dim - out_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            input_stream.read();
-        }
-    }
-}
-
-
-template <typename T, int io_parallel, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_padding(
-    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
-    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int in_hidden_dim = max_in_hidden_dim,
-    int out_hidden_dim = max_out_hidden_dim
-){
-    io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
-    #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-        pass_loop: for (int k = 0; k < in_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            output_stream.write(input_stream.read());
-        }
-        pad_loop: for (int k = 0; k < out_hidden_dim-in_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            output_stream.write(hls::vector<T, io_parallel>(0));
-        }
-    }
-}
-
-
-template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_register(
-    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
-    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int io_hidden_dim = max_hidden_dim
-){
-    hls::vector<T, io_parallel> reg[max_hidden_dim];
-    #pragma HLS bind_storage variable=reg type=ram_2p impl=uram
-    
-    o_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
-    #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-        store_loop: for (int k = 0; k < io_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            reg[k] = input_stream.read();
-        }
-        load_loop: for (int k = 0; k < io_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            output_stream.write(reg[k]);
-        }
-    }
-}
-
-
-template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_buffer(
-    tapa::istream<hls::vector<T, input_parallel>>& input_stream,
-    tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int io_hidden_dim = max_hidden_dim
-){
-    if(input_parallel >= output_parallel){
-        hls::vector<T, output_parallel> output_pack;
-        i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
-        #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
-            hidden_dim_loop: for (int k = 0; k < io_hidden_dim; k++) { 
-                hls::vector<T, input_parallel> input_pack = input_stream.read();
-                i_buffer_loop: for(int m = 0; m < input_parallel/output_parallel; m++){
-                #pragma HLS pipeline II=1
-                    for(int i = 0; i < output_parallel; i++){
-                    #pragma HLS unroll
-                        output_pack[i] = input_pack[m * output_parallel + i];
-                    }
-                    output_stream.write(output_pack);
-                }
-            }
-        }
-    }
-    else{
-        hls::vector<T, output_parallel> output_pack[max_hidden_dim];
-        o_block_loop: for (int M = 0; M < seq_len/output_parallel; M++){
-        #pragma HLS loop_tripcount min=1 max=max_seq_len/output_parallel
-            o_buffer_loop: for(int m = 0; m < output_parallel/input_parallel; m++){
-                hidden_dim_loop_1: for (int k = 0; k < io_hidden_dim; k++) {
-                #pragma HLS pipeline II=1
-                    hls::vector<T, input_parallel> input_pack = input_stream.read();
-                    for(int i = 0; i < input_parallel; i++){
-                    #pragma HLS unroll
-                        output_pack[k][m * input_parallel + i] = input_pack[i];
-                    }
-                    if(m == output_parallel/input_parallel - 1) output_stream.write(output_pack[k]);
-                }
-            }
-        }
-    }
-    
-}
-
-
-template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_buffer_transpose(
-    tapa::istream<hls::vector<T, input_parallel>>& input_stream,
-    tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int io_hidden_dim = max_hidden_dim
-){
-    T buffer_data[output_parallel][input_parallel];
-    #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=output_parallel/2 dim=1
-    #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=input_parallel/2 dim=2
-
-    i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
-    #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
-        o_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
-            input_buffer_loop: for (int k = 0; k < output_parallel; k++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, input_parallel> input_pack = input_stream.read();
-                for (int m = 0; m < input_parallel; m++){
-                #pragma HLS unroll
-                    buffer_data[k][m] = input_pack[m];
-                }
-            }
-            
-            output_buffer_loop: for (int m = 0; m < input_parallel; m++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, output_parallel> output_pack;   
-                for (int k = 0; k < output_parallel; k++) {
-                #pragma HLS unroll
-                    output_pack[k] = buffer_data[k][m];
-                }
-                output_stream.write(output_pack);
-            }
-        }
-    }
-}
-
-
-template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_io_buffer_transpose_mmap(
-    tapa::istream<hls::vector<T, input_parallel>>& input_stream,
-    tapa::mmap<hls::vector<T, output_parallel>> trans_mmap, //trans_mmap[io_hidden_dim/output_parallel * max_seq_len]
-    tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int io_hidden_dim = max_hidden_dim
-){
-    T buffer_data[output_parallel][input_parallel];
-    #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=output_parallel/2 dim=1
-    #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=input_parallel/2 dim=2
-
-    i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
-    #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
-        hidden_dim_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
-            input_buffer_loop: for (int k = 0; k < output_parallel; k++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, input_parallel> input_pack = input_stream.read();
-                for (int m = 0; m < input_parallel; m++){
-                #pragma HLS unroll
-                    buffer_data[k][m] = input_pack[m];
-                }
-            }
-            int bias = K * max_seq_len + M * input_parallel;
-            trans_loop: for (int m = 0; m < input_parallel; m++) {
-            #pragma HLS pipeline II=1
-                    hls::vector<T, output_parallel> trans_pack;
-                    for (int k = 0; k < output_parallel; k++) {
-                    #pragma HLS unroll
-                        trans_pack[k] = buffer_data[k][m];
-                    }
-                trans_mmap[bias + m] = trans_pack;
-            }
-            
-            // trans_loop: for (int m = 0, m_resp = 0; m_resp < input_parallel; ) {
-            // #pragma HLS pipeline II=1
-            //     if ((m < input_parallel) & !trans_mmap.write_addr.full() & !trans_mmap.write_data.full() ) {
-            //         hls::vector<T, output_parallel> trans_pack;
-            //         for (int k = 0; k < output_parallel; k++) {
-            //         #pragma HLS unroll
-            //             trans_pack[k] = buffer_data[k][m];
-            //         }
-            //         trans_mmap.write_addr.try_write(K * max_seq_len + M * input_parallel + m);
-            //         trans_mmap.write_data.try_write(trans_pack);
-            //         ++m;
-            //     }
-            //     uint8_t n_resp;
-            //     if (trans_mmap.write_resp.try_read(n_resp)) {
-            //         m_resp += int(n_resp) + 1;
-            //     }
-            //     // trans_mmap[K * max_seq_len + M * input_parallel + m] = trans_pack;
-            // }
-        }
-    }
-
-    o_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
-        for(int m = 0; m < seq_len; m++) {
-        #pragma HLS loop_tripcount min=1 max=max_seq_len
-            hls::vector<T, output_parallel> output_pack = trans_mmap[K * max_seq_len + m];
-            output_stream.write(output_pack);
-        }
-        // read_trans_loop: for(int i_req = 0, i_resp = 0; i_resp < seq_len;){
-        // #pragma HLS pipeline II=1
-        //     read_async_mmap(
-        //         trans_mmap,
-        //         output_stream,
-        //         K * max_seq_len,
-        //         seq_len,
-        //         i_req,
-        //         i_resp
-        //     );
-        // }
-    }
-}
-
-
-template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_stream_distributor(
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream_0,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream_1,
-    int out_channel,
-    int io_hidden_dim = max_hidden_dim,
-    int seq_len = max_seq_len
-){
-    io_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
-    #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
-        hls::vector<float, io_parallel> input_pack = input_stream.read();
-        if(out_channel == 0 || out_channel == 2)
-            output_stream_0.write(input_pack);
-        if(out_channel == 1 || out_channel == 2)
-            output_stream_1.write(input_pack);
-    }
-}
-
-template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_stream_distributor_3(
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream_0,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream_1,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream_2,
-    int out_channel,
-    int io_hidden_dim = max_hidden_dim,
-    int seq_len = max_seq_len
-){
-    io_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
-    #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
-        hls::vector<float, io_parallel> input_pack = input_stream.read();
-        if(out_channel == 0 || out_channel == 3)
-            output_stream_0.write(input_pack);
-        if(out_channel == 1 || out_channel == 3)
-            output_stream_1.write(input_pack);
-        if(out_channel == 2 || out_channel == 3)
-            output_stream_2.write(input_pack);
-    }
-}
-
-
-template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN, int merge_block_dim = 1>
-void pref_stream_merger(
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream_0,
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream_1,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream,
-    int in_channel,
-    int io_hidden_dim = max_hidden_dim,
-    int seq_len = max_seq_len
-){
-    if(in_channel == 0 || in_channel == 1){
-        seq_loop_01: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
-        #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
-            hls::vector<float, io_parallel> input_pack;
-            if(in_channel == 0)
-                input_pack = input_stream_0.read();
-            else if(in_channel == 1)
-                input_pack = input_stream_1.read();
-            output_stream.write(input_pack);
-        }
-    }
-    else if(in_channel == 2){
-        seq_loop_2: for (int M = 0; M < seq_len/io_parallel; M++){
-        #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-            hidden_loop_2: for (int m = 0; m < io_hidden_dim/(2*merge_block_dim); m++){
-                #pragma HLS loop_tripcount min=max_hidden_dim/(2*merge_block_dim) max=max_hidden_dim/(2*merge_block_dim)
-                block_loop_0: for (int k = 0; k < merge_block_dim; k++){
-                    output_stream.write(input_stream_0.read());
-                }
-                block_loop_1: for (int k = 0; k < merge_block_dim; k++){
-                    output_stream.write(input_stream_1.read());
-                }
-            }
-        }
-    }
-}
-
-
-template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
-void pref_stream_merger_3(
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream_0,
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream_1,
-    tapa::istream<hls::vector<float, io_parallel>>& input_stream_2,
-    tapa::ostream<hls::vector<float, io_parallel>>& output_stream,
-    int in_channel,
-    int io_hidden_dim = max_hidden_dim,
-    int seq_len = max_seq_len
-){
-    io_0_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
-    #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
-        hls::vector<float, io_parallel> input_pack;
-        if(in_channel == 0)
-            input_pack = input_stream_0.read();
-        else if(in_channel == 1)
-            input_pack = input_stream_1.read();
-        else if(in_channel == 2)
-            input_pack = input_stream_2.read();
-        output_stream.write(input_pack);
-    }
-}
-
 
 template <typename T, int block_parallel, int max_hidden_dim = HIDDEN_DIM, int max_dec_len = MAX_DEC_SEQ_LEN>
 void dec_input_loader(
@@ -640,6 +276,368 @@ void dec_stream_block_parallel_merger(
         output_stream.write(output_pack);
     }
 }
+// template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_input_loader(
+//     tapa::mmap<hls::vector<T, io_parallel>> input_mmap,
+//     tapa::ostream<hls::vector<T, io_parallel>>& input_stream, 
+//     int block_id,
+//     int seq_len = max_seq_len,
+//     int input_hidden_dim = max_hidden_dim,
+//     int addr_bias = 0
+// ){
+//     int bias = addr_bias + block_id * max_seq_len/io_parallel*input_hidden_dim;
+//     read_input_loop: for(int i = 0; i < seq_len/io_parallel*input_hidden_dim; i++){
+//     #pragma HLS pipeline II=1
+//         hls::vector<T, io_parallel> input_pack = input_mmap[bias + i];
+//         input_stream.write(input_pack);
+//     }
+// }
 
+// template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_output_drainer(
+//     tapa::istream<hls::vector<T, io_parallel>>& output_stream,
+//     tapa::mmap<hls::vector<T, io_parallel>> output_mmap, 
+//     int block_id,
+//     int seq_len = max_seq_len,
+//     int output_hidden_dim = max_hidden_dim,
+//     int addr_bias = 0
+// ){
+//     int bias = addr_bias + block_id * max_seq_len/io_parallel*output_hidden_dim;
+//     write_output_loop: for(int i = 0; i < seq_len/io_parallel*output_hidden_dim; i++){
+//     #pragma HLS pipeline II=1
+//         hls::vector<T, io_parallel> output_pack = output_stream.read();
+//         output_mmap[bias + i] = output_pack;
+//     }
+// }
+
+
+
+// template <typename T, int io_parallel, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_discard(
+//     tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int in_hidden_dim = max_in_hidden_dim,
+//     int out_hidden_dim = max_out_hidden_dim
+// ){
+//     io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+//     #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//         pass_loop: for (int k = 0; k < out_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             output_stream.write(input_stream.read());
+//         }
+//         discard_loop: for (int k = 0; k < in_hidden_dim - out_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             input_stream.read();
+//         }
+//     }
+// }
+
+
+// template <typename T, int io_parallel, int max_in_hidden_dim = HIDDEN_DIM, int max_out_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_padding(
+//     tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int in_hidden_dim = max_in_hidden_dim,
+//     int out_hidden_dim = max_out_hidden_dim
+// ){
+//     io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+//     #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//         pass_loop: for (int k = 0; k < in_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             output_stream.write(input_stream.read());
+//         }
+//         pad_loop: for (int k = 0; k < out_hidden_dim-in_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             output_stream.write(hls::vector<T, io_parallel>(0));
+//         }
+//     }
+// }
+
+
+// template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_register(
+//     tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int io_hidden_dim = max_hidden_dim
+// ){
+//     hls::vector<T, io_parallel> reg[max_hidden_dim];
+//     #pragma HLS bind_storage variable=reg type=ram_2p impl=uram
+    
+//     o_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+//     #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//         store_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             reg[k] = input_stream.read();
+//         }
+//         load_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             output_stream.write(reg[k]);
+//         }
+//     }
+// }
+
+
+// template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_buffer(
+//     tapa::istream<hls::vector<T, input_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int io_hidden_dim = max_hidden_dim
+// ){
+//     if(input_parallel >= output_parallel){
+//         hls::vector<T, output_parallel> output_pack;
+//         i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
+//         #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
+//             hidden_dim_loop: for (int k = 0; k < io_hidden_dim; k++) { 
+//                 hls::vector<T, input_parallel> input_pack = input_stream.read();
+//                 i_buffer_loop: for(int m = 0; m < input_parallel/output_parallel; m++){
+//                 #pragma HLS pipeline II=1
+//                     for(int i = 0; i < output_parallel; i++){
+//                     #pragma HLS unroll
+//                         output_pack[i] = input_pack[m * output_parallel + i];
+//                     }
+//                     output_stream.write(output_pack);
+//                 }
+//             }
+//         }
+//     }
+//     else{
+//         hls::vector<T, output_parallel> output_pack[max_hidden_dim];
+//         o_block_loop: for (int M = 0; M < seq_len/output_parallel; M++){
+//         #pragma HLS loop_tripcount min=1 max=max_seq_len/output_parallel
+//             o_buffer_loop: for(int m = 0; m < output_parallel/input_parallel; m++){
+//                 hidden_dim_loop_1: for (int k = 0; k < io_hidden_dim; k++) {
+//                 #pragma HLS pipeline II=1
+//                     hls::vector<T, input_parallel> input_pack = input_stream.read();
+//                     for(int i = 0; i < input_parallel; i++){
+//                     #pragma HLS unroll
+//                         output_pack[k][m * input_parallel + i] = input_pack[i];
+//                     }
+//                     if(m == output_parallel/input_parallel - 1) output_stream.write(output_pack[k]);
+//                 }
+//             }
+//         }
+//     }
+    
+// }
+
+
+// template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_buffer_transpose(
+//     tapa::istream<hls::vector<T, input_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int io_hidden_dim = max_hidden_dim
+// ){
+//     T buffer_data[output_parallel][input_parallel];
+//     #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=output_parallel/2 dim=1
+//     #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=input_parallel/2 dim=2
+
+//     i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
+//     #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
+//         o_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
+//             input_buffer_loop: for (int k = 0; k < output_parallel; k++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, input_parallel> input_pack = input_stream.read();
+//                 for (int m = 0; m < input_parallel; m++){
+//                 #pragma HLS unroll
+//                     buffer_data[k][m] = input_pack[m];
+//                 }
+//             }
+            
+//             output_buffer_loop: for (int m = 0; m < input_parallel; m++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, output_parallel> output_pack;   
+//                 for (int k = 0; k < output_parallel; k++) {
+//                 #pragma HLS unroll
+//                     output_pack[k] = buffer_data[k][m];
+//                 }
+//                 output_stream.write(output_pack);
+//             }
+//         }
+//     }
+// }
+
+
+// template <typename T, int input_parallel, int output_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_io_buffer_transpose_mmap(
+//     tapa::istream<hls::vector<T, input_parallel>>& input_stream,
+//     tapa::mmap<hls::vector<T, output_parallel>> trans_mmap, //trans_mmap[io_hidden_dim/output_parallel * max_seq_len]
+//     tapa::ostream<hls::vector<T, output_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int io_hidden_dim = max_hidden_dim
+// ){
+//     T buffer_data[output_parallel][input_parallel];
+//     #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=output_parallel/2 dim=1
+//     #pragma HLS ARRAY_PARTITION variable=buffer_data cyclic factor=input_parallel/2 dim=2
+
+//     i_block_loop: for (int M = 0; M < seq_len/input_parallel; M++){
+//     #pragma HLS loop_tripcount min=1 max=max_seq_len/input_parallel
+//         hidden_dim_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
+//             input_buffer_loop: for (int k = 0; k < output_parallel; k++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, input_parallel> input_pack = input_stream.read();
+//                 for (int m = 0; m < input_parallel; m++){
+//                 #pragma HLS unroll
+//                     buffer_data[k][m] = input_pack[m];
+//                 }
+//             }
+//             int bias = K * max_seq_len + M * input_parallel;
+//             trans_loop: for (int m = 0; m < input_parallel; m++) {
+//             #pragma HLS pipeline II=1
+//                     hls::vector<T, output_parallel> trans_pack;
+//                     for (int k = 0; k < output_parallel; k++) {
+//                     #pragma HLS unroll
+//                         trans_pack[k] = buffer_data[k][m];
+//                     }
+//                 trans_mmap[bias + m] = trans_pack;
+//             }
+            
+//             // trans_loop: for (int m = 0, m_resp = 0; m_resp < input_parallel; ) {
+//             // #pragma HLS pipeline II=1
+//             //     if ((m < input_parallel) & !trans_mmap.write_addr.full() & !trans_mmap.write_data.full() ) {
+//             //         hls::vector<T, output_parallel> trans_pack;
+//             //         for (int k = 0; k < output_parallel; k++) {
+//             //         #pragma HLS unroll
+//             //             trans_pack[k] = buffer_data[k][m];
+//             //         }
+//             //         trans_mmap.write_addr.try_write(K * max_seq_len + M * input_parallel + m);
+//             //         trans_mmap.write_data.try_write(trans_pack);
+//             //         ++m;
+//             //     }
+//             //     uint8_t n_resp;
+//             //     if (trans_mmap.write_resp.try_read(n_resp)) {
+//             //         m_resp += int(n_resp) + 1;
+//             //     }
+//             //     // trans_mmap[K * max_seq_len + M * input_parallel + m] = trans_pack;
+//             // }
+//         }
+//     }
+
+//     o_block_loop: for (int K = 0; K < io_hidden_dim/output_parallel; K++) {
+//         for(int m = 0; m < seq_len; m++) {
+//         #pragma HLS loop_tripcount min=1 max=max_seq_len
+//             hls::vector<T, output_parallel> output_pack = trans_mmap[K * max_seq_len + m];
+//             output_stream.write(output_pack);
+//         }
+//         // read_trans_loop: for(int i_req = 0, i_resp = 0; i_resp < seq_len;){
+//         // #pragma HLS pipeline II=1
+//         //     read_async_mmap(
+//         //         trans_mmap,
+//         //         output_stream,
+//         //         K * max_seq_len,
+//         //         seq_len,
+//         //         i_req,
+//         //         i_resp
+//         //     );
+//         // }
+//     }
+// }
+
+
+// template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_stream_distributor(
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream_0,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream_1,
+//     int out_channel,
+//     int io_hidden_dim = max_hidden_dim,
+//     int seq_len = max_seq_len
+// ){
+//     io_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
+//     #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
+//         hls::vector<float, io_parallel> input_pack = input_stream.read();
+//         if(out_channel == 0 || out_channel == 2)
+//             output_stream_0.write(input_pack);
+//         if(out_channel == 1 || out_channel == 2)
+//             output_stream_1.write(input_pack);
+//     }
+// }
+
+// template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_stream_distributor_3(
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream_0,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream_1,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream_2,
+//     int out_channel,
+//     int io_hidden_dim = max_hidden_dim,
+//     int seq_len = max_seq_len
+// ){
+//     io_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
+//     #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
+//         hls::vector<float, io_parallel> input_pack = input_stream.read();
+//         if(out_channel == 0 || out_channel == 3)
+//             output_stream_0.write(input_pack);
+//         if(out_channel == 1 || out_channel == 3)
+//             output_stream_1.write(input_pack);
+//         if(out_channel == 2 || out_channel == 3)
+//             output_stream_2.write(input_pack);
+//     }
+// }
+
+
+// template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN, int merge_block_dim = 1>
+// void pref_stream_merger(
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream_0,
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream_1,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream,
+//     int in_channel,
+//     int io_hidden_dim = max_hidden_dim,
+//     int seq_len = max_seq_len
+// ){
+//     if(in_channel == 0 || in_channel == 1){
+//         seq_loop_01: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
+//         #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
+//             hls::vector<float, io_parallel> input_pack;
+//             if(in_channel == 0)
+//                 input_pack = input_stream_0.read();
+//             else if(in_channel == 1)
+//                 input_pack = input_stream_1.read();
+//             output_stream.write(input_pack);
+//         }
+//     }
+//     else if(in_channel == 2){
+//         seq_loop_2: for (int M = 0; M < seq_len/io_parallel; M++){
+//         #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//             hidden_loop_2: for (int m = 0; m < io_hidden_dim/(2*merge_block_dim); m++){
+//                 #pragma HLS loop_tripcount min=max_hidden_dim/(2*merge_block_dim) max=max_hidden_dim/(2*merge_block_dim)
+//                 block_loop_0: for (int k = 0; k < merge_block_dim; k++){
+//                     output_stream.write(input_stream_0.read());
+//                 }
+//                 block_loop_1: for (int k = 0; k < merge_block_dim; k++){
+//                     output_stream.write(input_stream_1.read());
+//                 }
+//             }
+//         }
+//     }
+// }
+
+
+// template <typename T, int io_parallel, int max_hidden_dim=HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN>
+// void pref_stream_merger_3(
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream_0,
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream_1,
+//     tapa::istream<hls::vector<float, io_parallel>>& input_stream_2,
+//     tapa::ostream<hls::vector<float, io_parallel>>& output_stream,
+//     int in_channel,
+//     int io_hidden_dim = max_hidden_dim,
+//     int seq_len = max_seq_len
+// ){
+//     io_0_loop: for (int M = 0; M < seq_len/io_parallel*io_hidden_dim; M++){
+//     #pragma HLS loop_tripcount min=1*max_hidden_dim max=max_seq_len/io_parallel*max_hidden_dim
+//         hls::vector<float, io_parallel> input_pack;
+//         if(in_channel == 0)
+//             input_pack = input_stream_0.read();
+//         else if(in_channel == 1)
+//             input_pack = input_stream_1.read();
+//         else if(in_channel == 2)
+//             input_pack = input_stream_2.read();
+//         output_stream.write(input_pack);
+//     }
+// }
 
 #endif

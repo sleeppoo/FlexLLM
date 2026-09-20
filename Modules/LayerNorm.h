@@ -3,184 +3,184 @@
 #include "config.h"
 
 
-template <typename T, int io_hidden_dim = HIDDEN_DIM, bool enble_beta = false, int decoder_layer_num = DECODER_LAYER_NUM>
-void pref_Layer_Norm_gamma_beta_loader(
-    tapa::mmap<T> gamma_beta_mmap,
-    tapa::ostream<T>& gamma_beta_stream,
-    int block_id
-){
-    gamma_loop: for(int i = 0; i < io_hidden_dim; i++){
-    #pragma HLS pipeline II=1
-        T gamma = gamma_beta_mmap[block_id * io_hidden_dim + i];
-        gamma_beta_stream.write(gamma);
-    }
-    if(enble_beta){
-        beta_loop: for(int i = 0; i < io_hidden_dim; i++){
-        #pragma HLS pipeline II=1
-            T beta = gamma_beta_mmap[(decoder_layer_num + block_id) * io_hidden_dim + i];
-            gamma_beta_stream.write(beta);
-        }
-    }
-}
+// template <typename T, int io_hidden_dim = HIDDEN_DIM, bool enble_beta = false, int decoder_layer_num = DECODER_LAYER_NUM>
+// void pref_Layer_Norm_gamma_beta_loader(
+//     tapa::mmap<T> gamma_beta_mmap,
+//     tapa::ostream<T>& gamma_beta_stream,
+//     int block_id
+// ){
+//     gamma_loop: for(int i = 0; i < io_hidden_dim; i++){
+//     #pragma HLS pipeline II=1
+//         T gamma = gamma_beta_mmap[block_id * io_hidden_dim + i];
+//         gamma_beta_stream.write(gamma);
+//     }
+//     if(enble_beta){
+//         beta_loop: for(int i = 0; i < io_hidden_dim; i++){
+//         #pragma HLS pipeline II=1
+//             T beta = gamma_beta_mmap[(decoder_layer_num + block_id) * io_hidden_dim + i];
+//             gamma_beta_stream.write(beta);
+//         }
+//     }
+// }
 
 
 
-template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN, bool enble_beta = false, bool is_versal = false>
-void pref_Layer_Norm(
-    tapa::istream<hls::vector<T, io_parallel>>& input_stream,
-    tapa::istream<T>& gamma_beta_stream,
-    tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
-    int seq_len = max_seq_len,
-    int io_hidden_dim = max_hidden_dim,
-    const T eps = 0.00001
-){
-    T gamma[max_hidden_dim];
-    T beta[max_hidden_dim];
+// template <typename T, int io_parallel, int max_hidden_dim = HIDDEN_DIM, int max_seq_len = MAX_PRE_SEQ_LEN, bool enble_beta = false, bool is_versal = false>
+// void pref_Layer_Norm(
+//     tapa::istream<hls::vector<T, io_parallel>>& input_stream,
+//     tapa::istream<T>& gamma_beta_stream,
+//     tapa::ostream<hls::vector<T, io_parallel>>& output_stream,
+//     int seq_len = max_seq_len,
+//     int io_hidden_dim = max_hidden_dim,
+//     const T eps = 0.00001
+// ){
+//     T gamma[max_hidden_dim];
+//     T beta[max_hidden_dim];
 
-    gamma_load_loop: for (int k = 0; k < io_hidden_dim; k++) {
-    #pragma HLS pipeline II=1
-        gamma[k] = gamma_beta_stream.read();
-    }
+//     gamma_load_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//     #pragma HLS pipeline II=1
+//         gamma[k] = gamma_beta_stream.read();
+//     }
     
 
-    if(enble_beta){
-        beta_load_loop: for (int k = 0; k < io_hidden_dim; k++) {
-        #pragma HLS pipeline II=1
-            beta[k] = gamma_beta_stream.read();
-        }
-    }
+//     if(enble_beta){
+//         beta_load_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//         #pragma HLS pipeline II=1
+//             beta[k] = gamma_beta_stream.read();
+//         }
+//     }
 
-    // ultrascale+ FPGA (U280, u250)
-    if(!is_versal){
-        T A[io_parallel][max_hidden_dim];
-        #pragma HLS ARRAY_PARTITION variable=A dim=1 complete
-        T A_square_sum[io_parallel][4];
-        #pragma HLS ARRAY_PARTITION variable=A_square_sum complete
-        T A_RMS_cd[io_parallel];
-        #pragma HLS ARRAY_PARTITION variable=A_RMS_cd complete
+//     // ultrascale+ FPGA (U280, u250)
+//     if(!is_versal){
+//         T A[io_parallel][max_hidden_dim];
+//         #pragma HLS ARRAY_PARTITION variable=A dim=1 complete
+//         T A_square_sum[io_parallel][4];
+//         #pragma HLS ARRAY_PARTITION variable=A_square_sum complete
+//         T A_RMS_cd[io_parallel];
+//         #pragma HLS ARRAY_PARTITION variable=A_RMS_cd complete
 
-        io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
-            #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-            init_sum_loop: for (int i = 0; i < io_parallel; i++) {
-            #pragma HLS unroll
-                A_square_sum[i][0] = 0;
-                A_square_sum[i][1] = 0;
-                A_square_sum[i][2] = 0;
-                A_square_sum[i][3] = 0;
-            }
+//         io_block_loop: for (int M = 0; M < seq_len/io_parallel; M++){
+//             #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//             init_sum_loop: for (int i = 0; i < io_parallel; i++) {
+//             #pragma HLS unroll
+//                 A_square_sum[i][0] = 0;
+//                 A_square_sum[i][1] = 0;
+//                 A_square_sum[i][2] = 0;
+//                 A_square_sum[i][3] = 0;
+//             }
 
-            // in_buf_loop: for (int k = 0; k < io_hidden_dim; k++) {
-            // #pragma HLS pipeline II=1
-            //     hls::vector<T, io_parallel> temp_pack = input_stream.read();
-            //     for(int i = 0; i < io_parallel; i++){
-            //         T temp = temp_pack[i];
-            //         A[i][k] = temp;
-            //         A_square_sum[i][k % 4] += temp * temp;
-            //     }
-            // }
+//             // in_buf_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//             // #pragma HLS pipeline II=1
+//             //     hls::vector<T, io_parallel> temp_pack = input_stream.read();
+//             //     for(int i = 0; i < io_parallel; i++){
+//             //         T temp = temp_pack[i];
+//             //         A[i][k] = temp;
+//             //         A_square_sum[i][k % 4] += temp * temp;
+//             //     }
+//             // }
 
-            in_buf_loop: for (int k = 0; k < io_hidden_dim/4; k++) {
-            #pragma HLS pipeline II=4
-                hls::vector<T, io_parallel> temp_pack_0 = input_stream.read();
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = temp_pack_0[i];
-                    A[i][4 * k] = temp;
-                    A_square_sum[i][0] += temp * temp;
-                }
-                hls::vector<T, io_parallel> temp_pack_1 = input_stream.read();
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = temp_pack_1[i];
-                    A[i][4 * k + 1] = temp;
-                    A_square_sum[i][1] += temp * temp;
-                }
-                hls::vector<T, io_parallel> temp_pack_2 = input_stream.read();
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = temp_pack_2[i];
-                    A[i][4 * k + 2] = temp;
-                    A_square_sum[i][2] += temp * temp; 
-                }
-                hls::vector<T, io_parallel> temp_pack_3 = input_stream.read();
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = temp_pack_3[i];
-                    A[i][4 * k + 3] = temp;
-                    A_square_sum[i][3] += temp * temp;
-                }
-            }
+//             in_buf_loop: for (int k = 0; k < io_hidden_dim/4; k++) {
+//             #pragma HLS pipeline II=4
+//                 hls::vector<T, io_parallel> temp_pack_0 = input_stream.read();
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = temp_pack_0[i];
+//                     A[i][4 * k] = temp;
+//                     A_square_sum[i][0] += temp * temp;
+//                 }
+//                 hls::vector<T, io_parallel> temp_pack_1 = input_stream.read();
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = temp_pack_1[i];
+//                     A[i][4 * k + 1] = temp;
+//                     A_square_sum[i][1] += temp * temp;
+//                 }
+//                 hls::vector<T, io_parallel> temp_pack_2 = input_stream.read();
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = temp_pack_2[i];
+//                     A[i][4 * k + 2] = temp;
+//                     A_square_sum[i][2] += temp * temp; 
+//                 }
+//                 hls::vector<T, io_parallel> temp_pack_3 = input_stream.read();
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = temp_pack_3[i];
+//                     A[i][4 * k + 3] = temp;
+//                     A_square_sum[i][3] += temp * temp;
+//                 }
+//             }
 
-            Countdown_RMS_loop: for (int i = 0; i < io_parallel; i++) {
-            #pragma HLS pipeline II=1
-                A_RMS_cd[i] = 1.0f / sqrt(
-                    ((A_square_sum[i][0] + A_square_sum[i][1]) + (A_square_sum[i][2] + A_square_sum[i][3])) / io_hidden_dim + eps
-                );
-            }
+//             Countdown_RMS_loop: for (int i = 0; i < io_parallel; i++) {
+//             #pragma HLS pipeline II=1
+//                 A_RMS_cd[i] = 1.0f / sqrt(
+//                     ((A_square_sum[i][0] + A_square_sum[i][1]) + (A_square_sum[i][2] + A_square_sum[i][3])) / io_hidden_dim + eps
+//                 );
+//             }
 
-            output_scale_loop: for (int k = 0; k < io_hidden_dim; k++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, io_parallel> outp_pack;
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = A[i][k] * A_RMS_cd[i] * gamma[k];
-                    if(enble_beta){
-                        T temp_beta = temp + beta[k];
-                        outp_pack[i] = temp_beta;
-                    }
-                    else{
-                        outp_pack[i] = temp;
-                    }
-                }
-                output_stream.write(outp_pack);
-            }
-        }
-    }
+//             output_scale_loop: for (int k = 0; k < io_hidden_dim; k++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, io_parallel> outp_pack;
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = A[i][k] * A_RMS_cd[i] * gamma[k];
+//                     if(enble_beta){
+//                         T temp_beta = temp + beta[k];
+//                         outp_pack[i] = temp_beta;
+//                     }
+//                     else{
+//                         outp_pack[i] = temp;
+//                     }
+//                 }
+//                 output_stream.write(outp_pack);
+//             }
+//         }
+//     }
 
-    // versal FPGA (v80)
-    else{
-        T A[io_parallel][max_hidden_dim];
-        #pragma HLS ARRAY_PARTITION variable=A dim=1 complete
-        T A_square_sum[io_parallel];
-        #pragma HLS ARRAY_PARTITION variable=A_square_sum complete
-        T A_RMS_cd[io_parallel];
-        #pragma HLS ARRAY_PARTITION variable=A_RMS_cd complete
+//     // versal FPGA (v80)
+//     else{
+//         T A[io_parallel][max_hidden_dim];
+//         #pragma HLS ARRAY_PARTITION variable=A dim=1 complete
+//         T A_square_sum[io_parallel];
+//         #pragma HLS ARRAY_PARTITION variable=A_square_sum complete
+//         T A_RMS_cd[io_parallel];
+//         #pragma HLS ARRAY_PARTITION variable=A_RMS_cd complete
 
-        io_block_loop_versal: for (int M = 0; M < seq_len/io_parallel; M++){
-            #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
-            init_sum_loop_versal: for (int i = 0; i < io_parallel; i++) {
-            #pragma HLS unroll
-                A_square_sum[i] = 0;
-            }
+//         io_block_loop_versal: for (int M = 0; M < seq_len/io_parallel; M++){
+//             #pragma HLS loop_tripcount min=1 max=max_seq_len/io_parallel
+//             init_sum_loop_versal: for (int i = 0; i < io_parallel; i++) {
+//             #pragma HLS unroll
+//                 A_square_sum[i] = 0;
+//             }
 
-            in_buf_loop_versal: for (int k = 0; k < io_hidden_dim; k++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, io_parallel> temp_pack = input_stream.read();
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = temp_pack[i];
-                    A[i][k] = temp;
-                    A_square_sum[i] += temp * temp;
-                }
-            }
+//             in_buf_loop_versal: for (int k = 0; k < io_hidden_dim; k++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, io_parallel> temp_pack = input_stream.read();
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = temp_pack[i];
+//                     A[i][k] = temp;
+//                     A_square_sum[i] += temp * temp;
+//                 }
+//             }
 
-            Countdown_RMS_loop_versal: for (int i = 0; i < io_parallel; i++) {
-            #pragma HLS pipeline II=1
-                A_RMS_cd[i] = 1.0f / sqrt(A_square_sum[i] / io_hidden_dim + eps);
-            }
+//             Countdown_RMS_loop_versal: for (int i = 0; i < io_parallel; i++) {
+//             #pragma HLS pipeline II=1
+//                 A_RMS_cd[i] = 1.0f / sqrt(A_square_sum[i] / io_hidden_dim + eps);
+//             }
 
-            output_scale_loop_versal: for (int k = 0; k < io_hidden_dim; k++) {
-            #pragma HLS pipeline II=1
-                hls::vector<T, io_parallel> outp_pack;
-                for(int i = 0; i < io_parallel; i++){
-                    T temp = A[i][k] * A_RMS_cd[i] * gamma[k];
-                    if(enble_beta){
-                        T temp_beta = temp + beta[k];
-                        outp_pack[i] = temp_beta;
-                    }
-                    else{
-                        outp_pack[i] = temp;
-                    }
-                }
-                output_stream.write(outp_pack);
-            }
-        }
-    }
-}
+//             output_scale_loop_versal: for (int k = 0; k < io_hidden_dim; k++) {
+//             #pragma HLS pipeline II=1
+//                 hls::vector<T, io_parallel> outp_pack;
+//                 for(int i = 0; i < io_parallel; i++){
+//                     T temp = A[i][k] * A_RMS_cd[i] * gamma[k];
+//                     if(enble_beta){
+//                         T temp_beta = temp + beta[k];
+//                         outp_pack[i] = temp_beta;
+//                     }
+//                     else{
+//                         outp_pack[i] = temp;
+//                     }
+//                 }
+//                 output_stream.write(outp_pack);
+//             }
+//         }
+//     }
+// }
 
 
 template <typename T, int block_parallel, int io_hidden_dim = HIDDEN_DIM, bool enble_beta = false, int decoder_layer_num = DECODER_LAYER_NUM>
