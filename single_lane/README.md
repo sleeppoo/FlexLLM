@@ -1,6 +1,43 @@
-# FlexLLM INT8 single linear lane
+# FlexLLM DSP58 dot3 PE and parameterized lane
 
-This directory is an isolated baseline for one token and one contiguous
+## Hardware hierarchy
+
+`dsp58_dot3_int8` is the trusted RTL primitive and is intentionally unchanged.
+`dsp58_dot3_pe` is a zero-arithmetic HLS wrapper that gives that primitive its
+architectural meaning: one PE. `dot3_lane<PE_PER_LANE, ENABLE_ACCUM, ACC_WIDTH>`
+fully unrolls `PE_PER_LANE` PEs, reduces their results in fabric, and optionally
+accumulates multiple chunks in fabric. A lane transaction consumes
+`3*PE_PER_LANE` signed INT8 activation values and the same number of weights.
+
+The primitive ports and PE output are signed 24-bit, matching the verified RTL.
+Mathematically an INT8 product is 16 bits and three products need at most 18
+bits using the usual conservative growth rule. Keeping 24 bits preserves the
+trusted boundary. The lane uses `24+ceil(log2(PE_PER_LANE))` bits. The caller
+sets `ACC_WIDTH`; for at most `C` chunks, use at least
+`lane_width+ceil(log2(C))` bits. There is no safe finite default for an
+unbounded stream, so the default 32 bits must be validated for the application.
+
+PE contract: signed INT8 inputs, signed 24-bit output, latency 1, II 1, one
+DSP58 with `DSP_MODE=INT8`. Lane target: II 1 and exactly `PE_PER_LANE` DSP58s.
+The `bind_op ... impl=fabric` directives request fabric implementation for the
+reduction/accumulator. HLS directives are not a proof of the final mapped
+netlist, so the generated reports and netlist remain authoritative.
+
+Accumulation controls are sampled with each transaction. `acc_valid` qualifies
+the chunk; `acc_clear` clears before including the current chunk; and `acc_last`
+causes `result_valid` to assert for the final accumulated value. With
+`ENABLE_ACCUM=0`, clear/last are ignored and valid simply qualifies the current
+lane sum.
+
+The synthesis top is `hls/dot3_lane_top.cpp`. Select 1, 2, 4, or 8 PEs (and the
+accumulation variant) with the macros in `hls/hls_config.cfg`, using a separate
+work directory for every run. `tests/tb_dot3_lane_hls.cpp` directly exercises
+the synthesizable lane for all four sizes and both accumulation modes during
+HLS C simulation.
+
+## Legacy streamed linear baseline
+
+`single_lane_linear.hpp` remains as an isolated baseline for one token and one contiguous
 output-channel tile. It does not alter the existing multi-block decode graph.
 
 ## Dataflow and stream order
@@ -60,10 +97,19 @@ Check after synthesis/implementation:
 3. The HLS accumulator is outside the dot3 hierarchy and does not add a second
    DSP58 to one dot3 operation.
 4. C/RTL co-simulation matches `tests/test_single_lane.cpp`, including tails.
-5. Record achieved II/latency; the JSON declares RTL latency 1 and II 1, which
+5. Record achieved II/latency; the JSON declares PE latency 1 and II 1, which
    must match the final registered RTL.
-6. Record LUT, FF, BRAM, URAM, and DSP utilization.
+6. For PE_PER_LANE=1,2,4,8, record LUT, FF, BRAM, URAM, and DSP utilization;
+   verify DSP totals are 1,2,4,8 and inspect every primitive's DSP_MODE property.
 7. Run synthesis and implementation timing for the exact V80 device/clock.
+
+In Vivado, count the actual primitives with
+`get_cells -hier -filter {REF_NAME == DSP58}` and inspect each returned cell with
+`get_property DSP_MODE <cell>`. Also check the HLS synthesis report for II and
+latency and the post-synthesis utilization report for LUT/FF/DSP counts. If the
+DSP count exceeds `PE_PER_LANE`, first confirm the two `bind_op` directives were
+accepted (not warned as ignored), then apply equivalent `set_directive_bind_op`
+commands to the reduction and accumulator variables in the HLS Tcl flow.
 
 The primitive configuration is based on the user's prior test, but its mapping
 inside this blackbox, blackbox behavior in the locally installed Vitis version,

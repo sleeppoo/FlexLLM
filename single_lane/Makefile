@@ -6,8 +6,10 @@ VCS ?= vcs
 
 test: cpp-test rtl-test
 
-cpp-test: build/test_single_lane
+cpp-test: build/test_single_lane build/tb_dot3_pe build/tb_dot3_lane
 	./build/test_single_lane
+	./build/tb_dot3_pe
+	./build/tb_dot3_lane
 
 rtl-test: build/simv
 	./build/simv
@@ -30,6 +32,14 @@ build/tb_dsp58_dot3_int8: tests/tb_dsp58_dot3_int8.v rtl/dsp58_dot3_int8.v
 build/test_single_lane: tests/test_single_lane.cpp include/dsp58_dot3_ref.hpp
 	mkdir -p build
 	$(CXX) $(CXXFLAGS) -Iinclude tests/test_single_lane.cpp -o $@
+
+build/tb_dot3_pe: tests/tb_dot3_pe.cpp include/dsp58_dot3_ref.hpp
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -Iinclude $< -o $@
+
+build/tb_dot3_lane: tests/tb_dot3_lane.cpp
+	mkdir -p build
+	$(CXX) $(CXXFLAGS) -Iinclude $< -o $@
 
 clean:
 	rm -rf build
