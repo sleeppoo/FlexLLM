@@ -7,19 +7,13 @@ module dsp58_dot3_int8 (
     input  wire               ap_clk,
     input  wire               ap_rst,
     input  wire               ap_ce,
-    input  wire               ap_start,
-    input  wire               ap_continue,
-    input  wire signed [7:0]  a0,
-    input  wire signed [7:0]  a1,
-    input  wire signed [7:0]  a2,
-    input  wire signed [7:0]  w0,
-    input  wire signed [7:0]  w1,
-    input  wire signed [7:0]  w2,
-    output wire               ap_idle,
-    output wire               ap_done,
-    output wire               ap_ready,
-    output wire               dot3_ap_vld,
-    output reg  signed [23:0] dot3
+    input  wire        [7:0]  a0,
+    input  wire        [7:0]  a1,
+    input  wire        [7:0]  a2,
+    input  wire        [7:0]  w0,
+    input  wire        [7:0]  w1,
+    input  wire        [7:0]  w2,
+    output reg         [23:0] dot3
 );
   wire [33:0] dsp_a = {
       7'b1111111,
@@ -127,23 +121,13 @@ module dsp58_dot3_int8 (
   );
 `endif
 
-  reg valid_d1;
   always @(posedge ap_clk) begin
     if (ap_rst) begin
       dot3    <= 24'sd0;
-      valid_d1 <= 1'b0;
     end else if (ap_ce) begin
       dot3    <= dsp_p[23:0];
-      valid_d1 <= ap_start;
     end
   end
 
-  assign dot3_ap_vld = valid_d1;
-  assign ap_done     = valid_d1;
-  assign ap_ready    = valid_d1;
-  assign ap_idle     = ~ap_start;
 
-  // ap_continue is part of ap_ctrl_chain and is intentionally unused for this
-  // fixed-latency, II=1 leaf block.
-  wire unused_ap_continue = ap_continue;
 endmodule

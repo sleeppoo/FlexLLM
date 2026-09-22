@@ -14,18 +14,18 @@
     {"c_name":"w1", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w1"}},
     {"c_name":"w2", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w2"}},
     {"c_name":"dot3", "c_port_direction":"out", "rtl_ports":{
-      "data_write_out":"dot3", "data_write_valid":"dot3_ap_vld"
+      "data_write_out":"dot3"
     }}
   ],
   "rtl_common_signal": {
     "module_clock":"ap_clk",
     "module_reset":"ap_rst",
     "module_clock_enable":"ap_ce",
-    "ap_ctrl_chain_protocol_idle":"ap_idle",
-    "ap_ctrl_chain_protocol_start":"ap_start",
-    "ap_ctrl_chain_protocol_ready":"ap_ready",
-    "ap_ctrl_chain_protocol_done":"ap_done",
-    "ap_ctrl_chain_protocol_continue":"ap_continue"
+    "ap_ctrl_chain_protocol_idle":"",
+    "ap_ctrl_chain_protocol_start":"",
+    "ap_ctrl_chain_protocol_ready":"",
+    "ap_ctrl_chain_protocol_done":"",
+    "ap_ctrl_chain_protocol_continue":""
   },
   "rtl_performance": {"latency":"1", "II":"1"},
   "rtl_resource_usage": {"FF":"0", "LUT":"0", "BRAM":"0", "URAM":"0", "DSP":"1"}

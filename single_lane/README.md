@@ -51,7 +51,7 @@ configuration from the previously validated `dsp58_dot3_acc` experiment. Its
 external accumulator was deliberately removed: the DSP58 C input is tied to
 zero, and the long accumulator remains in HLS. The standalone VCS test defines
 `FLEXLLM_DSP58_BEHAVIORAL_SIM`, so it does not require a UNISIM DSP58 model.
-Vitis/Vivado builds must leave this macro undefined.
+Vitis/Vivado builds must leave this macro undefined. The blackbox uses ap_ctrl_none: ap_ce advances the fixed-latency, II=1 dot3 pipeline, while the JSON declares latency 1 and requires no per-call control handshake.
 
 Check after synthesis/implementation:
 

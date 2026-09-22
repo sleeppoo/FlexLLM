@@ -4,10 +4,7 @@ module tb_dsp58_dot3_int8;
   reg ap_clk = 0;
   reg ap_rst = 1;
   reg ap_ce = 1;
-  reg ap_start = 0;
-  reg ap_continue = 1;
   reg signed [7:0] a0, a1, a2, w0, w1, w2;
-  wire ap_idle, ap_done, ap_ready, dot3_ap_vld;
   wire signed [23:0] dot3;
 
   dsp58_dot3_int8 dut(.*);
@@ -20,12 +17,9 @@ module tb_dsp58_dot3_int8;
       @(negedge ap_clk);
       a0 = ta0; a1 = ta1; a2 = ta2;
       w0 = tw0; w1 = tw1; w2 = tw2;
-      ap_start = 1;
       @(negedge ap_clk);
-      ap_start = 0;
-      if (!dot3_ap_vld || dot3 !== expected) begin
-        $display("FAIL: got %0d expected %0d valid=%0d", dot3, expected,
-                 dot3_ap_vld);
+      if (dot3 !== expected) begin
+        $display("FAIL: got %0d expected %0d", dot3, expected);
         $fatal(1);
       end
     end
