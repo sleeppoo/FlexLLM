@@ -8,6 +8,39 @@
 namespace flexllm {
 namespace single_lane {
 
+namespace detail {
+
+// Vitis black boxes cannot bind a reference output directly to an element in
+// the middle of an array. Compile-time recursion gives every PE call its own
+// scalar output before copying that value into the completely partitioned
+// partial array.
+template <int PeIndex, int NumPes>
+struct Dot3PeBank {
+  static void run(const ap_int<8> activation[NumPes][3],
+                  const ap_int<8> weight[NumPes][3],
+                  ap_int<24> partial[NumPes]) {
+#pragma HLS inline
+    ap_int<24> pe_out;
+    dsp58_dot3_pe(
+        activation[PeIndex][0], activation[PeIndex][1],
+        activation[PeIndex][2], weight[PeIndex][0], weight[PeIndex][1],
+        weight[PeIndex][2], pe_out);
+    partial[PeIndex] = pe_out;
+    Dot3PeBank<PeIndex + 1, NumPes>::run(activation, weight, partial);
+  }
+};
+
+template <int NumPes>
+struct Dot3PeBank<NumPes, NumPes> {
+  static void run(const ap_int<8> activation[NumPes][3],
+                  const ap_int<8> weight[NumPes][3],
+                  ap_int<24> partial[NumPes]) {
+#pragma HLS inline
+  }
+};
+
+}  // namespace detail
+
 constexpr int ceil_log2_constexpr(unsigned value) {
   int result = 0;
   unsigned power = 1;
@@ -61,12 +94,7 @@ void dot3_lane(
   ap_int<24> partial[NumPes];
 #pragma HLS array_partition variable=partial complete dim=1
 
-pe_loop:
-  for (int pe = 0; pe < NumPes; ++pe) {
-#pragma HLS unroll
-    dsp58_dot3_pe(activation[pe][0], activation[pe][1], activation[pe][2],
-                  weight[pe][0], weight[pe][1], weight[pe][2], partial[pe]);
-  }
+  detail::Dot3PeBank<0, NumPes>::run(activation, weight, partial);
 
   ap_int<Widths::kLaneSumWidth> lane_sum = 0;
 #pragma HLS bind_op variable=lane_sum op=add impl=fabric
