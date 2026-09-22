@@ -50,8 +50,7 @@ void single_lane_linear_int8(hls::stream<ap_int<8>>& activations,
       const ap_int<8> w1 = (r + 1 < in_dim) ? weights.read() : ap_int<8>(0);
       const ap_int<8> w2 = (r + 2 < in_dim) ? weights.read() : ap_int<8>(0);
 
-      ap_int<24> partial;
-      dsp58_dot3_int8(a0, a1, a2, w0, w1, w2, partial);
+      const ap_int<24> partial = dsp58_dot3_int8(a0, a1, a2, w0, w1, w2);
       // Long accumulation stays outside the DSP58 dot3 blackbox.
       acc += ap_int<AccWidth>(partial);
     }

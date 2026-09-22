@@ -6,6 +6,19 @@
 
 #include "dot3_lane.hpp"
 
+#ifndef PE_PER_LANE
+#define PE_PER_LANE 4
+#endif
+
+#ifndef ACC_WIDTH
+#define ACC_WIDTH 32
+#endif
+
+void dot3_lane_top(const ap_int<8> activation[PE_PER_LANE * 3],
+                   const ap_int<8> weight[PE_PER_LANE * 3], bool acc_clear,
+                   bool acc_valid, bool acc_last, ap_int<ACC_WIDTH>& result,
+                   bool& result_valid);
+
 namespace {
 
 template <int N>
@@ -60,13 +73,30 @@ bool test_accumulation() {
   return result.to_int64() == golden;
 }
 
+bool test_configured_top() {
+  ap_int<8> activation[PE_PER_LANE * 3];
+  ap_int<8> weight[PE_PER_LANE * 3];
+  std::int64_t golden = 0;
+  for (int i = 0; i < PE_PER_LANE * 3; ++i) {
+    const int a = (17 * i + 3) % 256 - 128;
+    const int w = (29 * i + 11) % 256 - 128;
+    activation[i] = a;
+    weight[i] = w;
+    golden += a * w;
+  }
+  ap_int<ACC_WIDTH> result = 0;
+  bool valid = false;
+  dot3_lane_top(activation, weight, false, true, false, result, valid);
+  return valid && result.to_int64() == golden;
+}
+
 }  // namespace
 
 int main() {
   const bool passed = test_lane<1>() && test_lane<2>() && test_lane<4>() &&
                       test_lane<8>() && test_accumulation<1>() &&
                       test_accumulation<2>() && test_accumulation<4>() &&
-                      test_accumulation<8>();
+                      test_accumulation<8>() && test_configured_top();
   if (!passed) {
     std::cerr << "HLS PE/lane test failed\n";
     return 1;

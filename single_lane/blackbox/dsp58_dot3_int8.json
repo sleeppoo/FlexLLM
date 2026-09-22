@@ -12,11 +12,11 @@
     {"c_name":"a2", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"a2"}},
     {"c_name":"w0", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w0"}},
     {"c_name":"w1", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w1"}},
-    {"c_name":"w2", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w2"}},
-    {"c_name":"dot3", "c_port_direction":"out", "rtl_ports":{
-      "data_write_out":"dot3"
-    }}
+    {"c_name":"w2", "c_port_direction":"in",  "rtl_ports":{"data_read_in":"w2"}}
   ],
+  "c_return": {"c_port_direction":"out", "rtl_ports":{
+    "data_write_out":"dot3"
+  }},
   "rtl_common_signal": {
     "module_clock":"ap_clk",
     "module_reset":"ap_rst",

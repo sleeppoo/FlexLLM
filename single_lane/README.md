@@ -35,6 +35,13 @@ work directory for every run. `tests/tb_dot3_lane_hls.cpp` directly exercises
 the synthesizable lane for all four sizes and both accumulation modes during
 HLS C simulation.
 
+The black-box result uses JSON `c_return`, not an output-reference parameter.
+Vitis HLS 2025.1 scheduled the output-reference form at II=2 because it created
+a false distance-1 dependence between the next black-box call and the load of
+the reused local output scalar. The return-value form represents the result as
+a value, removes that false dependence, and gives the non-accumulating lane
+II=1 without changing `rtl/dsp58_dot3_int8.v`.
+
 ## Legacy streamed linear baseline
 
 `single_lane_linear.hpp` remains as an isolated baseline for one token and one contiguous

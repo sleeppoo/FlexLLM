@@ -20,12 +20,10 @@ struct Dot3PeBank {
                   const ap_int<8> weight[NumPes][3],
                   ap_int<24> partial[NumPes]) {
 #pragma HLS inline
-    ap_int<24> pe_out;
-    dsp58_dot3_pe(
+    partial[PeIndex] = dsp58_dot3_pe(
         activation[PeIndex][0], activation[PeIndex][1],
         activation[PeIndex][2], weight[PeIndex][0], weight[PeIndex][1],
-        weight[PeIndex][2], pe_out);
-    partial[PeIndex] = pe_out;
+        weight[PeIndex][2]);
     Dot3PeBank<PeIndex + 1, NumPes>::run(activation, weight, partial);
   }
 };
